@@ -1,0 +1,10 @@
+[Unit]
+Description=Primitive Fan Control
+
+[Service]
+ExecStart=/usr/local/bin/cm3588
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
