@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  rust-unit-tests:
+    name: rust checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run linter
+        run: cargo clippy
+        if: ${{ !cancelled() }}
+
+      - name: Run formatter
+        run: cargo fmt --check
+        if: ${{ !cancelled() }}
+
+      - name: Run unit tests
+        run: cargo test
+        if: ${{ !cancelled() }}
