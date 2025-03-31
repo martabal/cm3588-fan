@@ -193,10 +193,16 @@ fn main() {
         .and_then(|s| s.parse::<u32>().ok())
         .filter(|&s| (1..=4).contains(&s));
 
+    if min_threshold >= max_threshold {
+        panic!(
+            "min_threshold can't be superior or equal to max_threshold. min_threshold: {min_threshold}, max_threshold: {max_threshold}"
+        );
+    }
+
     if let Some(max_state) = max_state {
-        if min_state > max_state {
+        if min_state >= max_state {
             panic!(
-                "min_state can't be superior to max_state. min_state: {min_state}, max_state: {max_state}"
+                "min_state can't be superior or equal to max_state. min_state: {min_state}, max_state: {max_state}"
             );
         }
     }
