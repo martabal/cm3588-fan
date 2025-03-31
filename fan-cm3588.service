@@ -2,7 +2,7 @@
 Description=Primitive Fan Control
 
 [Service]
-ExecStart=/usr/local/bin/cm3588
+ExecStart=/usr/local/bin/cm3588-fan
 Restart=always
 RestartSec=10
 
