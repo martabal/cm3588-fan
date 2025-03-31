@@ -12,6 +12,21 @@ const LOWER_TEMP_THRESHOLD: f64 = 45.0;
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
 const MIN_STATE: u32 = 0;
 
+struct Config {
+    threshold: Threshold,
+    state: State,
+}
+
+struct State {
+    max_state: Option<u32>,
+    min_state: u32,
+}
+
+struct Threshold {
+    min_threshold: f64,
+    max_threshold: f64,
+}
+
 fn setup_logging() {
     let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
 
@@ -24,12 +39,10 @@ fn setup_logging() {
         _ => LevelFilter::Debug, // Default to Debug if invalid or missing
     };
 
-    println!("{}", level_filter);
-
     Builder::new().filter_level(level_filter).init();
 }
 
-fn get_temperature_slots() -> Vec<(u32, f64)> {
+fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
     let fan_device = match get_fan_device() {
         Some(device) => device,
         None => {
@@ -38,10 +51,15 @@ fn get_temperature_slots() -> Vec<(u32, f64)> {
         }
     };
 
-    let max_state: u32 = fs::read_to_string(format!("{}/max_state", fan_device))
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0);
+    let max_state: u32 = if let Some(max) = config.state.max_state {
+        max
+    } else {
+        fs::read_to_string(format!("{}/max_state", fan_device))
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
+    };
+
     trace!("max_state: {max_state}");
 
     if max_state == 0 {
@@ -49,10 +67,15 @@ fn get_temperature_slots() -> Vec<(u32, f64)> {
         return vec![];
     }
 
-    let step = (UPPER_TEMP_THRESHOLD - LOWER_TEMP_THRESHOLD) / max_state as f64;
+    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
 
     let slots = (0..=max_state)
-        .map(|x| (x + MIN_STATE, x as f64 * step + LOWER_TEMP_THRESHOLD))
+        .map(|x| {
+            (
+                x + config.state.min_state,
+                x as f64 * step + config.threshold.min_threshold,
+            )
+        })
         .collect();
 
     trace!("Slots: {:?}", slots);
@@ -111,13 +134,14 @@ fn get_current_temp() -> f64 {
     temps.into_iter().fold(0.0, f64::max)
 }
 
-fn adjust_speed(current_temp: f64, is_init: &mut bool) {
-    let slots = get_temperature_slots();
+fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
+    let slots = get_temperature_slots(state);
+    let fallback = (state.state.min_state, state.threshold.min_threshold);
     let desired_slot = slots
         .iter()
         .filter(|(_, temp)| *temp <= current_temp)
         .last()
-        .unwrap_or_else(|| slots.first().unwrap_or(&(MIN_STATE, LOWER_TEMP_THRESHOLD)));
+        .unwrap_or_else(|| slots.first().unwrap_or(&fallback));
     let desired_state = desired_slot.0;
 
     let fan_device = match get_fan_device() {
@@ -152,10 +176,45 @@ fn main() {
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(5);
+    let max_threshold = env::var("MAX_THRESHOLD")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(UPPER_TEMP_THRESHOLD);
+    let min_threshold = env::var("MIN_THRESHOLD")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(LOWER_TEMP_THRESHOLD);
+    let min_state = env::var("MIN_STATE")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(MIN_STATE);
+    let max_state: Option<u32> = env::var("MAX_STATE")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&s| (1..=4).contains(&s));
+
+    if let Some(max_state) = max_state {
+        if min_state > max_state {
+            panic!(
+                "min_state can't be superior to max_state. min_state: {min_state}, max_state: {max_state}"
+            );
+        }
+    }
     let mut is_init = false;
+    let state = Config {
+        threshold: Threshold {
+            min_threshold,
+            max_threshold,
+        },
+        state: State {
+            max_state,
+            min_state,
+        },
+    };
+
     loop {
         let current_temp = get_current_temp();
-        adjust_speed(current_temp, &mut is_init);
+        adjust_speed(current_temp, &mut is_init, &state);
         debug!("Sleeping for {sleep_time} seconds");
         thread::sleep(Duration::from_secs(sleep_time));
     }
