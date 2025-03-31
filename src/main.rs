@@ -201,7 +201,7 @@ fn main() {
         }
     }
     let mut is_init = false;
-    let state = Config {
+    let config = Config {
         threshold: Threshold {
             min_threshold,
             max_threshold,
@@ -214,7 +214,7 @@ fn main() {
 
     loop {
         let current_temp = get_current_temp();
-        adjust_speed(current_temp, &mut is_init, &state);
+        adjust_speed(current_temp, &mut is_init, &config);
         debug!("Sleeping for {sleep_time} seconds");
         thread::sleep(Duration::from_secs(sleep_time));
     }
