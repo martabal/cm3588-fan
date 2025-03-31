@@ -1,7 +1,7 @@
+use std::{env, fs, thread, time::Duration};
+
 use env_logger::Builder;
 use log::{LevelFilter, debug, error, info, trace};
-use std::env;
-use std::{fs, thread, time::Duration};
 
 const THERMAL_DIR: &str = "/sys/class/thermal";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
@@ -36,7 +36,7 @@ fn setup_logging() {
         "info" => LevelFilter::Info,
         "warn" => LevelFilter::Warn,
         "error" => LevelFilter::Error,
-        _ => LevelFilter::Debug, // Default to Debug if invalid or missing
+        _ => LevelFilter::Debug,
     };
 
     Builder::new().filter_level(level_filter).init();
