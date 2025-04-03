@@ -40,6 +40,12 @@ fn setup_logging() {
     };
 
     Builder::new().filter_level(level_filter).init();
+    println!("Log level set to: {log_level}");
+    info!(
+        "Starting {} v{}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
 }
 
 fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
@@ -140,7 +146,7 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
     let desired_slot = slots
         .iter()
         .filter(|(_, temp)| *temp <= current_temp)
-        .last()
+        .next_back()
         .unwrap_or_else(|| slots.first().unwrap_or(&fallback));
     let desired_state = desired_slot.0;
 
