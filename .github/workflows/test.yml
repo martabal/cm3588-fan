@@ -28,3 +28,9 @@ jobs:
       - name: Run unit tests
         run: cargo test
         if: ${{ !cancelled() }}
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        if: ${{ !cancelled() }}
+        with:
+          dockerfile: ./Dockerfile

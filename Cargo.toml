@@ -1,10 +1,10 @@
 [package]
 name = "cm3588-fan"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
-env_logger = "0.11.7"
+env_logger = "0.11.8"
 log = "0.4.27"
 
 [profile.release]
