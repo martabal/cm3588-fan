@@ -1,7 +1,8 @@
-use std::{env, fs, thread, time::Duration};
+use std::{env, fs, io::Write, thread, time::Duration};
 
+use colored::Colorize;
 use env_logger::Builder;
-use log::{LevelFilter, debug, error, info, trace};
+use log::{Level, LevelFilter, debug, error, info, trace};
 
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
@@ -50,10 +51,12 @@ fn check_config(max_state: &Option<u32>, min_state: &u32) {
     }
 }
 
-fn setup_logging() {
-    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
-
-    let level_filter = match log_level.to_lowercase().as_str() {
+fn setup_logging(debug: bool) {
+    let level_filter = match env::var("LOG_LEVEL")
+        .unwrap_or("info".into())
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "trace" => LevelFilter::Trace,
         "debug" => LevelFilter::Debug,
         "info" => LevelFilter::Info,
@@ -61,14 +64,35 @@ fn setup_logging() {
         "error" => LevelFilter::Error,
         _ => LevelFilter::Debug,
     };
+    let mut builder = Builder::new();
 
-    Builder::new().filter_level(level_filter).init();
-    println!("Log level set to: {log_level}");
-    info!(
-        "Starting {} v{}",
-        env!("CARGO_PKG_NAME"),
+    if !debug {
+        builder.format(|f, r| {
+            let msg = format!("{}", r.args());
+            let colored_msg = match r.level() {
+                Level::Warn => msg.yellow(),
+                Level::Error => msg.red(),
+                Level::Info => msg.green(),
+                Level::Debug => msg.blue(),
+                Level::Trace => msg.cyan(),
+            };
+            writeln!(f, "{}", colored_msg)
+        });
+    }
+
+    builder.filter_level(level_filter).init();
+
+    println!("Log level set to: {level_filter}");
+    let message = format!(
+        "Starting PWM Fan Control Service v{}",
         env!("CARGO_PKG_VERSION")
     );
+
+    if debug {
+        info!("{}", message);
+    } else {
+        println!("{}", message);
+    }
 }
 
 fn get_devic_max_state(fan_device: &str) -> u32 {
@@ -195,8 +219,12 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
 }
 
 fn main() {
-    setup_logging();
-    info!("Starting PWM Fan Control Service");
+    let debug = env::var("DEBUG")
+        .ok()
+        .and_then(|s| s.parse::<bool>().ok())
+        .unwrap_or(false);
+    setup_logging(debug);
+
     let fan_device = match get_fan_device() {
         Some(device) => device,
         None => {
@@ -205,6 +233,7 @@ fn main() {
         }
     };
     info!("Fan device: {fan_device}");
+
     let sleep_time = env::var("SLEEP_TIME")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
