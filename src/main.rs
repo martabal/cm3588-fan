@@ -3,10 +3,10 @@ use std::{env, fs, thread, time::Duration};
 use env_logger::Builder;
 use log::{LevelFilter, debug, error, info, trace};
 
-const THERMAL_DIR: &str = "/sys/class/thermal";
-const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
-const THERMAL_ZONE_NAME: &str = "thermal_zone";
 const DEVICE_NAME_COOLING: &str = "cooling_device";
+const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
+const THERMAL_DIR: &str = "/sys/class/thermal";
+const THERMAL_ZONE_NAME: &str = "thermal_zone";
 const FILE_NAME_CUR_STATE: &str = "cur_state";
 const LOWER_TEMP_THRESHOLD: f64 = 45.0;
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
@@ -25,6 +25,29 @@ struct State {
 struct Threshold {
     min_threshold: f64,
     max_threshold: f64,
+}
+
+fn check_config(max_state: &Option<u32>, min_state: &u32) {
+    if let Some(max_state) = max_state {
+        if min_state >= max_state {
+            panic!(
+                "min_state can't be superior or equal to max_state. min_state: {min_state}, max_state: {max_state}"
+            );
+        }
+        match get_fan_device() {
+            Some(fan_device) => {
+                let max_state_accepted = get_devic_max_state(&fan_device);
+                if *max_state > max_state_accepted {
+                    panic!(
+                        "max_state is superior to the max_state of the fan. max_state: {max_state}, max_state of the fan: {max_state_accepted}"
+                    )
+                }
+            }
+            None => {
+                error!("No PWM fan device found");
+            }
+        };
+    }
 }
 
 fn setup_logging() {
@@ -48,6 +71,13 @@ fn setup_logging() {
     );
 }
 
+fn get_devic_max_state(fan_device: &str) -> u32 {
+    fs::read_to_string(format!("{}/max_state", fan_device))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
     let fan_device = match get_fan_device() {
         Some(device) => device,
@@ -60,10 +90,7 @@ fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
     let max_state: u32 = if let Some(max) = config.state.max_state {
         max
     } else {
-        fs::read_to_string(format!("{}/max_state", fan_device))
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0)
+        get_devic_max_state(&fan_device)
     };
 
     trace!("max_state: {max_state}");
@@ -205,13 +232,7 @@ fn main() {
         );
     }
 
-    if let Some(max_state) = max_state {
-        if min_state >= max_state {
-            panic!(
-                "min_state can't be superior or equal to max_state. min_state: {min_state}, max_state: {max_state}"
-            );
-        }
-    }
+    check_config(&max_state, &min_state);
     let mut is_init = false;
     let config = Config {
         threshold: Threshold {
