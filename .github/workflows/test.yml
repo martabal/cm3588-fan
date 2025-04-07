@@ -9,8 +9,8 @@ on:
     types: [published]
 
 jobs:
-  rust-unit-tests:
-    name: rust checks
+  rust-linter:
+    name: rust linter
     runs-on: ubuntu-latest
 
     steps:
@@ -21,16 +21,40 @@ jobs:
         run: cargo clippy
         if: ${{ !cancelled() }}
 
+  rust-format:
+    name: rust formatter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Run formatter
         run: cargo fmt --check
         if: ${{ !cancelled() }}
 
-      - name: Run unit tests
-        run: cargo test
-        if: ${{ !cancelled() }}
+  docker-linter:
+    name: docker linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
         if: ${{ !cancelled() }}
         with:
           dockerfile: ./Dockerfile
+
+  rust-unit-tests:
+    name: rust unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run unit tests
+        run: cargo test
+        if: ${{ !cancelled() }}
