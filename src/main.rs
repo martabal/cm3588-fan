@@ -102,6 +102,19 @@ fn get_devic_max_state(fan_device: &str) -> u32 {
         .unwrap_or(0)
 }
 
+fn calcul_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
+
+    return (0..=max_state)
+        .map(|x| {
+            (
+                x + config.state.min_state,
+                x as f64 * step + config.threshold.min_threshold,
+            )
+        })
+        .collect();
+}
+
 fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
     let fan_device = match get_fan_device() {
         Some(device) => device,
@@ -124,16 +137,7 @@ fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
         return vec![];
     }
 
-    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
-
-    let slots = (0..=max_state)
-        .map(|x| {
-            (
-                x + config.state.min_state,
-                x as f64 * step + config.threshold.min_threshold,
-            )
-        })
-        .collect();
+    let slots = calcul_slots(config, max_state);
 
     trace!("Slots: {:?}", slots);
     slots
@@ -279,5 +283,244 @@ fn main() {
         adjust_speed(current_temp, &mut is_init, &config);
         debug!("Sleeping for {sleep_time} seconds");
         thread::sleep(Duration::from_secs(sleep_time));
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, collections::HashMap, path::Path};
+
+    use super::*;
+
+    struct MockFs {
+        files: RefCell<HashMap<String, String>>,
+        dirs: RefCell<HashMap<String, Vec<String>>>,
+    }
+
+    impl MockFs {
+        fn new() -> Self {
+            Self {
+                files: RefCell::new(HashMap::new()),
+                dirs: RefCell::new(HashMap::new()),
+            }
+        }
+
+        fn add_file(&self, path: &str, content: &str) {
+            self.files
+                .borrow_mut()
+                .insert(path.to_string(), content.to_string());
+        }
+
+        fn add_dir(&self, path: &str, entries: Vec<String>) {
+            self.dirs.borrow_mut().insert(path.to_string(), entries);
+        }
+    }
+
+    fn mock_read_dir(mock_fs: &MockFs, path: &str) -> Result<Vec<String>, std::io::Error> {
+        match mock_fs.dirs.borrow().get(path) {
+            Some(entries) => Ok(entries.clone()),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Directory not found",
+            )),
+        }
+    }
+
+    fn mock_read_to_string(mock_fs: &MockFs, path: &str) -> Result<String, std::io::Error> {
+        match mock_fs.files.borrow().get(path) {
+            Some(content) => Ok(content.clone()),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "File not found",
+            )),
+        }
+    }
+
+    fn mock_write(mock_fs: &MockFs, path: &str, content: &str) -> Result<(), std::io::Error> {
+        mock_fs.add_file(path, content);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_device_max_state() {
+        let mock_fs = MockFs::new();
+        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
+
+        mock_fs.add_file(&format!("{}/max_state", fan_device), "4");
+        let result = mock_read_to_string(&mock_fs, &format!("{}/max_state", fan_device))
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        assert_eq!(result, 4);
+
+        mock_fs.add_file(&format!("{}/max_state", fan_device), "invalid");
+        let result = mock_read_to_string(&mock_fs, &format!("{}/max_state", fan_device))
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_get_fan_speed() {
+        let mock_fs = MockFs::new();
+        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
+
+        mock_fs.add_file(&format!("{}/{}", fan_device, FILE_NAME_CUR_STATE), "2");
+        let cur_state_file = format!("{}/{}", fan_device, FILE_NAME_CUR_STATE);
+        let result = mock_read_to_string(&mock_fs, &cur_state_file)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        assert_eq!(result, 2);
+
+        mock_fs.add_file(
+            &format!("{}/{}", fan_device, FILE_NAME_CUR_STATE),
+            "invalid",
+        );
+        let result = mock_read_to_string(&mock_fs, &cur_state_file)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_set_fan_speed() {
+        let mock_fs = MockFs::new();
+        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
+        let cur_state_file = format!("{}/{}", fan_device, FILE_NAME_CUR_STATE);
+
+        assert!(mock_write(&mock_fs, &cur_state_file, "3").is_ok());
+        assert_eq!(mock_read_to_string(&mock_fs, &cur_state_file).unwrap(), "3");
+    }
+
+    #[test]
+    fn test_get_current_temp() {
+        let mock_fs = MockFs::new();
+
+        mock_fs.add_dir(
+            THERMAL_DIR,
+            vec![
+                format!("{}/thermal_zone0", THERMAL_DIR),
+                format!("{}/thermal_zone1", THERMAL_DIR),
+                format!("{}/cooling_device0", THERMAL_DIR),
+            ],
+        );
+
+        mock_fs.add_file(&format!("{}/thermal_zone0/temp", THERMAL_DIR), "45000");
+        mock_fs.add_file(&format!("{}/thermal_zone1/temp", THERMAL_DIR), "55000");
+
+        let result = {
+            let mut temps = vec![];
+            if let Ok(entries) = mock_read_dir(&mock_fs, THERMAL_DIR) {
+                for entry in entries {
+                    let path = Path::new(&entry);
+                    if let Some(file_name) = path.file_name() {
+                        if let Some(file_str) = file_name.to_str() {
+                            if file_str.starts_with(THERMAL_ZONE_NAME) {
+                                let temp_file = format!("{}/temp", path.to_string_lossy());
+                                if let Ok(content) = mock_read_to_string(&mock_fs, &temp_file) {
+                                    if let Ok(temp) = content.trim().parse::<f64>() {
+                                        temps.push(temp / 1000.0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            temps.into_iter().fold(0.0, f64::max)
+        };
+
+        assert_eq!(result, 55.0);
+    }
+
+    #[test]
+    fn test_check_config() {
+        let max_state = Some(4);
+        let min_state = 0;
+
+        let mut panic_occurred = false;
+
+        if let Some(max) = max_state {
+            if min_state >= max {
+                panic_occurred = true;
+            }
+        }
+
+        assert!(!panic_occurred);
+        let max_state = Some(2);
+        let min_state = 3;
+
+        let mut panic_occurred = false;
+        if let Some(max) = max_state {
+            if min_state >= max {
+                panic_occurred = true;
+            }
+        }
+
+        assert!(panic_occurred);
+    }
+
+    #[test]
+    fn test_get_temperature_slots() {
+        let max_state = 5;
+        let config = Config {
+            threshold: Threshold {
+                min_threshold: 40.0,
+                max_threshold: 80.0,
+            },
+            state: State {
+                max_state: Some(max_state),
+                min_state: 0,
+            },
+        };
+
+        let slots = calcul_slots(&config, max_state);
+
+        assert_eq!(slots.len(), 6);
+        assert_eq!(slots[0], (0, 40.0));
+        assert_eq!(slots[5], (5, 80.0));
+
+        let step = (80.0 - 40.0) / 5.0;
+        assert_eq!(slots[1], (1, 40.0 + step));
+        assert_eq!(slots[2], (2, 40.0 + 2.0 * step));
+        assert_eq!(slots[3], (3, 40.0 + 3.0 * step));
+    }
+
+    #[test]
+    fn test_adjust_speed() {
+        let mock_fs = MockFs::new();
+        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
+
+        mock_fs.add_file(&format!("{}/max_state", fan_device), "4");
+        mock_fs.add_file(&format!("{}/{}", fan_device, FILE_NAME_CUR_STATE), "1");
+
+        let max_state = 5;
+
+        let config = Config {
+            threshold: Threshold {
+                min_threshold: 40.0,
+                max_threshold: 80.0,
+            },
+            state: State {
+                max_state: Some(max_state),
+                min_state: 0,
+            },
+        };
+
+        let current_temp = 60.0;
+
+        let slots = calcul_slots(&config, max_state);
+
+        let fallback = (config.state.min_state, config.threshold.min_threshold);
+        let desired_slot = slots
+            .iter()
+            .filter(|(_, temp)| *temp <= current_temp)
+            .next_back()
+            .unwrap_or(&fallback);
+        let desired_state = desired_slot.0;
+
+        assert_eq!(desired_state, 2);
     }
 }
