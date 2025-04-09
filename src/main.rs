@@ -111,7 +111,7 @@ fn calculate_slots(fan: &Fan, max_state: u32) -> Vec<(u32, f64)> {
         .collect()
 }
 
-fn get_temperature_slots(fan: &Fan, fan_device: &mut String) -> Vec<(u32, f64)> {
+fn get_temperature_slots(fan: &Fan, fan_device: &String) -> Vec<(u32, f64)> {
     let max_state = fan
         .state
         .max_state
@@ -168,16 +168,20 @@ fn get_current_temp() -> Result<f64, Box<dyn Error>> {
 }
 
 fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &mut Option<String>) {
-    let path = match fan_device {
-        Some(p) => p,
-        None => return,
-    };
+    if fan_device.is_none() {
+        *fan_device = get_fan_device();
+        if fan_device.is_none() {
+            return;
+        }
+    }
+
+    let path = fan_device.as_ref().unwrap();
 
     let file_content = match fs::read_to_string(format!("{}/{}", path, FILE_NAME_CUR_STATE)) {
         Ok(content) => content,
         Err(e) => {
-            *fan_device = None;
             error!("Device is not available {e}");
+            *fan_device = None;
             return;
         }
     };
@@ -195,19 +199,20 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &m
 
             if speed != desired_state || !*is_init {
                 info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
-
                 match fs::write(
                     format!("{path}/{FILE_NAME_CUR_STATE}"),
                     desired_state.to_string(),
                 ) {
                     Ok(_) => {}
                     Err(err) => {
-                        error!("Can't set the speed to device {path} {err}")
+                        error!("Can't set the speed to device {path} {err}");
+                        *fan_device = None;
                     }
                 }
             } else {
                 debug!("Temp: {current_temp:.2}°C, no speed change needed");
             }
+
             if !*is_init {
                 debug!("Setting the speed for the first time!");
                 *is_init = true;
@@ -218,7 +223,6 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &m
         }
     }
 }
-
 fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
     env::var(key)
         .ok()
@@ -274,12 +278,12 @@ fn main() {
         match get_current_temp() {
             Ok(temp) => {
                 adjust_speed(temp, &mut is_init, &fan, &mut fan_device);
-                debug!("Sleeping for {sleep_time} seconds");
             }
             Err(err) => {
                 error!("Can't read temperature {err}")
             }
         }
+        debug!("Sleeping for {sleep_time} seconds");
 
         thread::sleep(Duration::from_secs(sleep_time));
     }
