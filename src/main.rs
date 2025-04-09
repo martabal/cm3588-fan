@@ -28,32 +28,24 @@ struct Threshold {
     max_threshold: f64,
 }
 
-fn check_config(max_state: &Option<u32>, min_state: &u32) {
-    if let Some(max_state) = max_state {
-        if min_state >= max_state {
-            panic!(
-                "min_state can't be superior or equal to max_state. min_state: {min_state}, max_state: {max_state}"
-            );
+fn check_config(max_state: &Option<u32>, min_state: u32) {
+    if let Some(max) = max_state {
+        if min_state >= *max {
+            panic!("min_state can't be >= max_state: {min_state} >= {max}");
         }
-        match get_fan_device() {
-            Some(fan_device) => {
-                let max_state_accepted = get_devic_max_state(&fan_device);
-                if *max_state > max_state_accepted {
-                    panic!(
-                        "max_state is superior to the max_state of the fan. max_state: {max_state}, max_state of the fan: {max_state_accepted}"
-                    )
-                }
-            }
-            None => {
-                error!("No PWM fan device found");
-            }
-        };
+
+        let fan_device = get_fan_device().expect("No PWM fan device found");
+        let device_max = get_device_max_state(&fan_device);
+
+        if *max > device_max {
+            panic!("Configured max_state {max} exceeds device max_state {device_max}");
+        }
     }
 }
 
-fn setup_logging(debug: bool) {
+fn setup_logging(debug_mode: bool) {
     let level_filter = match env::var("LOG_LEVEL")
-        .unwrap_or("info".into())
+        .unwrap_or_else(|_| "info".into())
         .to_ascii_lowercase()
         .as_str()
     {
@@ -64,52 +56,52 @@ fn setup_logging(debug: bool) {
         "error" => LevelFilter::Error,
         _ => LevelFilter::Debug,
     };
+
     let mut builder = Builder::new();
 
-    if !debug {
+    if !debug_mode {
         builder.format(|f, r| {
-            let msg = format!("{}", r.args());
-            let colored_msg = match r.level() {
-                Level::Warn => msg.yellow(),
-                Level::Error => msg.red(),
-                Level::Info => msg.green(),
-                Level::Debug => msg.blue(),
-                Level::Trace => msg.cyan(),
+            let color = match r.level() {
+                Level::Warn => r.args().to_string().yellow(),
+                Level::Error => r.args().to_string().red(),
+                Level::Info => r.args().to_string().green(),
+                Level::Debug => r.args().to_string().blue(),
+                Level::Trace => r.args().to_string().cyan(),
             };
-            writeln!(f, "{}", colored_msg)
+            writeln!(f, "{color}")
         });
     }
 
     builder.filter_level(level_filter).init();
 
     println!("Log level set to: {level_filter}");
-    let message = format!(
+    let msg = format!(
         "Starting PWM Fan Control Service v{}",
         env!("CARGO_PKG_VERSION")
     );
 
-    if debug {
-        info!("{}", message);
+    if debug_mode {
+        info!("{msg}");
     } else {
-        println!("{}", message);
+        println!("{msg}");
     }
 }
 
-fn get_devic_max_state(fan_device: &str) -> u32 {
-    fs::read_to_string(format!("{}/max_state", fan_device))
+fn get_device_max_state(device: &str) -> u32 {
+    fs::read_to_string(format!("{device}/max_state"))
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0)
 }
 
-fn calcul_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
     let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
 
     (0..=max_state)
-        .map(|x| {
+        .map(|i| {
             (
-                x + config.state.min_state,
-                x as f64 * step + config.threshold.min_threshold,
+                i + config.state.min_state,
+                i as f64 * step + config.threshold.min_threshold,
             )
         })
         .collect()
@@ -123,100 +115,85 @@ fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
             return vec![];
         }
     };
-
-    let max_state: u32 = if let Some(max) = config.state.max_state {
-        max
-    } else {
-        get_devic_max_state(&fan_device)
-    };
+    let max_state = config
+        .state
+        .max_state
+        .unwrap_or_else(|| get_device_max_state(&fan_device));
 
     trace!("max_state: {max_state}");
-
     if max_state == 0 {
-        error!("max_state could not be determined for {}", fan_device);
+        error!("max_state could not be determined for {fan_device}");
         return vec![];
     }
 
-    let slots = calcul_slots(config, max_state);
-
+    let slots = calculate_slots(config, max_state);
     trace!("Slots: {:?}", slots);
     slots
 }
 
 fn get_fan_device() -> Option<String> {
-    let entries = fs::read_dir(THERMAL_DIR).ok()?;
-    for entry in entries.flatten() {
+    fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
         let path = entry.path();
         if path.file_name()?.to_str()?.starts_with(DEVICE_NAME_COOLING) {
-            let type_file = path.join("type");
-            if let Ok(content) = fs::read_to_string(type_file) {
-                if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    return Some(path.to_string_lossy().to_string());
-                }
+            let content = fs::read_to_string(path.join("type")).ok()?;
+            if content.trim() == DEVICE_TYPE_PWM_FAN {
+                return Some(path.to_string_lossy().into_owned());
             }
         }
-    }
-    None
+        None
+    })
 }
 
 fn get_fan_speed(device: &str) -> u32 {
-    let cur_state_file = format!("{}/{}", device, FILE_NAME_CUR_STATE);
-    fs::read_to_string(cur_state_file)
+    fs::read_to_string(format!("{device}/{FILE_NAME_CUR_STATE}"))
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0)
 }
 
 fn set_fan_speed(device: &str, speed: &str) {
-    let cur_state_file = format!("{}/{}", device, FILE_NAME_CUR_STATE);
-    fs::write(cur_state_file, speed).unwrap()
+    fs::write(format!("{device}/{FILE_NAME_CUR_STATE}"), speed).ok();
 }
 
 fn get_current_temp() -> f64 {
-    let mut temps = vec![];
-    if let Ok(entries) = fs::read_dir(THERMAL_DIR) {
-        for entry in entries.flatten() {
+    fs::read_dir(THERMAL_DIR)
+        .ok()
+        .into_iter()
+        .flat_map(|e| e.flatten())
+        .filter_map(|entry| {
             let path = entry.path();
-            if path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with(THERMAL_ZONE_NAME)
-            {
-                let temp_file = path.join("temp");
-                if let Ok(content) = fs::read_to_string(temp_file) {
-                    if let Ok(temp) = content.trim().parse::<f64>() {
-                        temps.push(temp / 1000.0);
-                    }
-                }
+            if path.file_name()?.to_str()?.starts_with(THERMAL_ZONE_NAME) {
+                fs::read_to_string(path.join("temp"))
+                    .ok()
+                    .and_then(|s| s.trim().parse::<f64>().ok())
+                    .map(|t| t / 1000.0)
+            } else {
+                None
             }
-        }
-    }
-    temps.into_iter().fold(0.0, f64::max)
+        })
+        .fold(0.0, f64::max)
 }
 
-fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
-    let slots = get_temperature_slots(state);
-    let fallback = (state.state.min_state, state.threshold.min_threshold);
-    let desired_slot = slots
+fn adjust_speed(current_temp: f64, is_init: &mut bool, config: &Config) {
+    let slots = get_temperature_slots(config);
+    let fallback = (config.state.min_state, config.threshold.min_threshold);
+    let desired = slots
         .iter()
-        .filter(|(_, temp)| *temp <= current_temp)
-        .next_back()
-        .unwrap_or_else(|| slots.first().unwrap_or(&fallback));
-    let desired_state = desired_slot.0;
+        .rev()
+        .find(|(_, t)| *t <= current_temp)
+        .unwrap_or(slots.first().unwrap_or(&fallback));
+    let desired_state = desired.0;
 
-    let fan_device = match get_fan_device() {
-        Some(device) => device,
-        None => return,
-    };
+    let fan_device = get_fan_device().unwrap_or_default();
 
-    if get_fan_speed(&fan_device) != desired_state || !(*is_init) {
-        info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)",);
+    if get_fan_speed(&fan_device) != desired_state || !*is_init {
+        info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
         set_fan_speed(&fan_device, &desired_state.to_string());
     } else {
-        debug!("Temp: {current_temp:.2}°C, not changing the speed");
+        debug!("Temp: {current_temp:.2}°C, no speed change needed");
     }
-    if !(*is_init) {
+
+    if !*is_init {
         debug!("Setting the speed for the first time!");
         *is_init = true;
     }
@@ -225,19 +202,16 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
 fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
     env::var(key)
         .ok()
-        .and_then(|s| s.parse::<T>().ok())
+        .and_then(|s| s.parse().ok())
         .unwrap_or(fallback)
 }
 
 fn main() {
-    let debug = env::var("DEBUG")
-        .ok()
-        .and_then(|s| s.parse::<bool>().ok())
-        .unwrap_or(false);
+    let debug = get_env("DEBUG", false);
     setup_logging(debug);
 
     let fan_device = match get_fan_device() {
-        Some(device) => device,
+        Some(dev) => dev,
         None => {
             error!("No PWM fan device found");
             return;
@@ -246,24 +220,21 @@ fn main() {
     info!("Fan device: {fan_device}");
 
     let sleep_time = get_env("SLEEP_TIME", 5);
-
     let max_threshold = get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
-
     let min_threshold = get_env("MIN_THRESHOLD", LOWER_TEMP_THRESHOLD);
     let min_state = get_env("MIN_STATE", MIN_STATE);
-    let max_state: Option<u32> = env::var("MAX_STATE")
+
+    let max_state = env::var("MAX_STATE")
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
-        .filter(|&s| (1..=4).contains(&s));
+        .filter(|v| (1..=4).contains(v));
 
     if min_threshold >= max_threshold {
-        panic!(
-            "min_threshold can't be superior or equal to max_threshold. min_threshold: {min_threshold}, max_threshold: {max_threshold}"
-        );
+        panic!("min_threshold ({min_threshold}) >= max_threshold ({max_threshold})");
     }
 
-    check_config(&max_state, &min_state);
-    let mut is_init = false;
+    check_config(&max_state, min_state);
+
     let config = Config {
         threshold: Threshold {
             min_threshold,
@@ -275,6 +246,8 @@ fn main() {
         },
     };
 
+    let mut is_init = false;
+
     loop {
         let current_temp = get_current_temp();
         adjust_speed(current_temp, &mut is_init, &config);
@@ -282,6 +255,7 @@ fn main() {
         thread::sleep(Duration::from_secs(sleep_time));
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, collections::HashMap, path::Path};
@@ -473,7 +447,7 @@ mod tests {
             },
         };
 
-        let slots = calcul_slots(&config, max_state);
+        let slots = calculate_slots(&config, max_state);
 
         assert_eq!(slots.len(), 6);
         assert_eq!(slots[0], (0, 40.0));
@@ -508,7 +482,7 @@ mod tests {
 
         let current_temp = 60.0;
 
-        let slots = calcul_slots(&config, max_state);
+        let slots = calculate_slots(&config, max_state);
 
         let fallback = (config.state.min_state, config.threshold.min_threshold);
         let desired_slot = slots
