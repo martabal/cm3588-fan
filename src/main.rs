@@ -1,8 +1,8 @@
-use std::{env, fs, io::Write, str::FromStr, thread, time::Duration};
+use std::{env, error::Error, fs, io::Write, str::FromStr, thread, time::Duration};
 
 use colored::Colorize;
 use env_logger::Builder;
-use log::{Level, LevelFilter, debug, error, info, trace};
+use log::{Level, LevelFilter, debug, error, info, trace, warn};
 
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
@@ -13,7 +13,7 @@ const LOWER_TEMP_THRESHOLD: f64 = 45.0;
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
 const MIN_STATE: u32 = 0;
 
-struct Config {
+struct Fan {
     threshold: Threshold,
     state: State,
 }
@@ -28,17 +28,21 @@ struct Threshold {
     max_threshold: f64,
 }
 
-fn check_config(max_state: &Option<u32>, min_state: u32) {
+fn check_config(max_state: &Option<u32>, min_state: u32, fan_device: &Option<String>) {
     if let Some(max) = max_state {
         if min_state >= *max {
             panic!("min_state can't be >= max_state: {min_state} >= {max}");
         }
 
-        let fan_device = get_fan_device().expect("No PWM fan device found");
-        let device_max = get_device_max_state(&fan_device);
+        match fan_device {
+            Some(device) => {
+                let device_max = get_device_max_state(device);
 
-        if *max > device_max {
-            panic!("Configured max_state {max} exceeds device max_state {device_max}");
+                if *max > device_max {
+                    panic!("Configured max_state {max} exceeds device max_state {device_max}");
+                }
+            }
+            None => warn!("max_state can't be checked because fan_device is not detected"),
         }
     }
 }
@@ -94,31 +98,24 @@ fn get_device_max_state(device: &str) -> u32 {
         .unwrap_or(0)
 }
 
-fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
-    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
+fn calculate_slots(fan: &Fan, max_state: u32) -> Vec<(u32, f64)> {
+    let step = (fan.threshold.max_threshold - fan.threshold.min_threshold) / max_state as f64;
 
     (0..=max_state)
         .map(|i| {
             (
-                i + config.state.min_state,
-                i as f64 * step + config.threshold.min_threshold,
+                i + fan.state.min_state,
+                i as f64 * step + fan.threshold.min_threshold,
             )
         })
         .collect()
 }
 
-fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
-    let fan_device = match get_fan_device() {
-        Some(device) => device,
-        None => {
-            error!("No PWM fan device found");
-            return vec![];
-        }
-    };
-    let max_state = config
+fn get_temperature_slots(fan: &Fan, fan_device: &mut String) -> Vec<(u32, f64)> {
+    let max_state = fan
         .state
         .max_state
-        .unwrap_or_else(|| get_device_max_state(&fan_device));
+        .unwrap_or_else(|| get_device_max_state(fan_device));
 
     trace!("max_state: {max_state}");
     if max_state == 0 {
@@ -126,7 +123,7 @@ fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
         return vec![];
     }
 
-    let slots = calculate_slots(config, max_state);
+    let slots = calculate_slots(fan, max_state);
     trace!("Slots: {:?}", slots);
     slots
 }
@@ -144,58 +141,81 @@ fn get_fan_device() -> Option<String> {
     })
 }
 
-fn get_fan_speed(device: &str) -> u32 {
-    fs::read_to_string(format!("{device}/{FILE_NAME_CUR_STATE}"))
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
-}
+fn get_current_temp() -> Result<f64, Box<dyn Error>> {
+    let mut max_temp = None;
 
-fn set_fan_speed(device: &str, speed: &str) {
-    fs::write(format!("{device}/{FILE_NAME_CUR_STATE}"), speed).ok();
-}
+    for entry in fs::read_dir(THERMAL_DIR)? {
+        let entry = entry?;
+        let path = entry.path();
 
-fn get_current_temp() -> f64 {
-    fs::read_dir(THERMAL_DIR)
-        .ok()
-        .into_iter()
-        .flat_map(|e| e.flatten())
-        .filter_map(|entry| {
-            let path = entry.path();
-            if path.file_name()?.to_str()?.starts_with(THERMAL_ZONE_NAME) {
-                fs::read_to_string(path.join("temp"))
-                    .ok()
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .map(|t| t / 1000.0)
-            } else {
-                None
+        if path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.starts_with(THERMAL_ZONE_NAME))
+            .unwrap_or(false)
+        {
+            let temp_path = path.join("temp");
+            if let Ok(s) = fs::read_to_string(&temp_path) {
+                if let Ok(t) = s.trim().parse::<f64>() {
+                    let temp = t / 1000.0;
+                    max_temp = Some(max_temp.map_or(temp, |m: f64| m.max(temp)));
+                }
             }
-        })
-        .fold(0.0, f64::max)
-}
-
-fn adjust_speed(current_temp: f64, is_init: &mut bool, config: &Config) {
-    let slots = get_temperature_slots(config);
-    let fallback = (config.state.min_state, config.threshold.min_threshold);
-    let desired = slots
-        .iter()
-        .rev()
-        .find(|(_, t)| *t <= current_temp)
-        .unwrap_or(slots.first().unwrap_or(&fallback));
-    let desired_state = desired.0;
-
-    let fan_device = get_fan_device().unwrap_or_default();
-
-    if get_fan_speed(&fan_device) != desired_state || !*is_init {
-        info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
-        set_fan_speed(&fan_device, &desired_state.to_string());
-    } else {
-        debug!("Temp: {current_temp:.2}°C, no speed change needed");
+        }
     }
 
-    if !*is_init {
-        debug!("Setting the speed for the first time!");
-        *is_init = true;
+    max_temp.ok_or_else(|| Box::from("No valid thermal zone found"))
+}
+
+fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &mut Option<String>) {
+    let path = match fan_device {
+        Some(p) => p,
+        None => return,
+    };
+
+    let file_content = match fs::read_to_string(format!("{}/{}", path, FILE_NAME_CUR_STATE)) {
+        Ok(content) => content,
+        Err(e) => {
+            *fan_device = None;
+            error!("Device is not available {e}");
+            return;
+        }
+    };
+
+    match file_content.trim().parse::<u32>() {
+        Ok(speed) => {
+            let slots = get_temperature_slots(fan, path);
+            let fallback = (fan.state.min_state, fan.threshold.min_threshold);
+            let desired = slots
+                .iter()
+                .rev()
+                .find(|(_, t)| *t <= current_temp)
+                .unwrap_or(slots.first().unwrap_or(&fallback));
+            let desired_state = desired.0;
+
+            if speed != desired_state || !*is_init {
+                info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
+
+                match fs::write(
+                    format!("{path}/{FILE_NAME_CUR_STATE}"),
+                    desired_state.to_string(),
+                ) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Can't set the speed to device {path} {err}")
+                    }
+                }
+            } else {
+                debug!("Temp: {current_temp:.2}°C, no speed change needed");
+            }
+            if !*is_init {
+                debug!("Setting the speed for the first time!");
+                *is_init = true;
+            }
+        }
+        Err(e) => {
+            error!("Can't parse speed value {e}");
+        }
     }
 }
 
@@ -210,14 +230,16 @@ fn main() {
     let debug = get_env("DEBUG", false);
     setup_logging(debug);
 
-    let fan_device = match get_fan_device() {
-        Some(dev) => dev,
+    let mut fan_device = match get_fan_device() {
+        Some(device) => {
+            info!("Fan device: {device}");
+            Some(device)
+        }
         None => {
             error!("No PWM fan device found");
-            return;
+            None
         }
     };
-    info!("Fan device: {fan_device}");
 
     let sleep_time = get_env("SLEEP_TIME", 5);
     let max_threshold = get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
@@ -233,9 +255,9 @@ fn main() {
         panic!("min_threshold ({min_threshold}) >= max_threshold ({max_threshold})");
     }
 
-    check_config(&max_state, min_state);
+    check_config(&max_state, min_state, &fan_device);
 
-    let config = Config {
+    let fan = Fan {
         threshold: Threshold {
             min_threshold,
             max_threshold,
@@ -249,9 +271,16 @@ fn main() {
     let mut is_init = false;
 
     loop {
-        let current_temp = get_current_temp();
-        adjust_speed(current_temp, &mut is_init, &config);
-        debug!("Sleeping for {sleep_time} seconds");
+        match get_current_temp() {
+            Ok(temp) => {
+                adjust_speed(temp, &mut is_init, &fan, &mut fan_device);
+                debug!("Sleeping for {sleep_time} seconds");
+            }
+            Err(err) => {
+                error!("Can't read temperature {err}")
+            }
+        }
+
         thread::sleep(Duration::from_secs(sleep_time));
     }
 }
@@ -306,11 +335,6 @@ mod tests {
         }
     }
 
-    fn mock_write(mock_fs: &MockFs, path: &str, content: &str) -> Result<(), std::io::Error> {
-        mock_fs.add_file(path, content);
-        Ok(())
-    }
-
     #[test]
     fn test_get_device_max_state() {
         let mock_fs = MockFs::new();
@@ -329,40 +353,6 @@ mod tests {
             .and_then(|s| s.trim().parse::<u32>().ok())
             .unwrap_or(0);
         assert_eq!(result, 0);
-    }
-
-    #[test]
-    fn test_get_fan_speed() {
-        let mock_fs = MockFs::new();
-        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
-
-        mock_fs.add_file(&format!("{}/{}", fan_device, FILE_NAME_CUR_STATE), "2");
-        let cur_state_file = format!("{}/{}", fan_device, FILE_NAME_CUR_STATE);
-        let result = mock_read_to_string(&mock_fs, &cur_state_file)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
-        assert_eq!(result, 2);
-
-        mock_fs.add_file(
-            &format!("{}/{}", fan_device, FILE_NAME_CUR_STATE),
-            "invalid",
-        );
-        let result = mock_read_to_string(&mock_fs, &cur_state_file)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
-        assert_eq!(result, 0);
-    }
-
-    #[test]
-    fn test_set_fan_speed() {
-        let mock_fs = MockFs::new();
-        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
-        let cur_state_file = format!("{}/{}", fan_device, FILE_NAME_CUR_STATE);
-
-        assert!(mock_write(&mock_fs, &cur_state_file, "3").is_ok());
-        assert_eq!(mock_read_to_string(&mock_fs, &cur_state_file).unwrap(), "3");
     }
 
     #[test]
@@ -436,7 +426,7 @@ mod tests {
     #[test]
     fn test_get_temperature_slots() {
         let max_state = 5;
-        let config = Config {
+        let fan = Fan {
             threshold: Threshold {
                 min_threshold: 40.0,
                 max_threshold: 80.0,
@@ -447,7 +437,7 @@ mod tests {
             },
         };
 
-        let slots = calculate_slots(&config, max_state);
+        let slots = calculate_slots(&fan, max_state);
 
         assert_eq!(slots.len(), 6);
         assert_eq!(slots[0], (0, 40.0));
@@ -469,7 +459,7 @@ mod tests {
 
         let max_state = 5;
 
-        let config = Config {
+        let fan = Fan {
             threshold: Threshold {
                 min_threshold: 40.0,
                 max_threshold: 80.0,
@@ -482,9 +472,9 @@ mod tests {
 
         let current_temp = 60.0;
 
-        let slots = calculate_slots(&config, max_state);
+        let slots = calculate_slots(&fan, max_state);
 
-        let fallback = (config.state.min_state, config.threshold.min_threshold);
+        let fallback = (fan.state.min_state, fan.threshold.min_threshold);
         let desired_slot = slots
             .iter()
             .filter(|(_, temp)| *temp <= current_temp)
