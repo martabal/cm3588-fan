@@ -1,4 +1,4 @@
-use std::{env, fs, io::Write, thread, time::Duration};
+use std::{env, fs, io::Write, str::FromStr, thread, time::Duration};
 
 use colored::Colorize;
 use env_logger::Builder;
@@ -105,14 +105,14 @@ fn get_devic_max_state(fan_device: &str) -> u32 {
 fn calcul_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
     let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
 
-    return (0..=max_state)
+    (0..=max_state)
         .map(|x| {
             (
                 x + config.state.min_state,
                 x as f64 * step + config.threshold.min_threshold,
             )
         })
-        .collect();
+        .collect()
 }
 
 fn get_temperature_slots(config: &Config) -> Vec<(u32, f64)> {
@@ -222,6 +222,13 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, state: &Config) {
     }
 }
 
+fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
+    env::var(key)
+        .ok()
+        .and_then(|s| s.parse::<T>().ok())
+        .unwrap_or(fallback)
+}
+
 fn main() {
     let debug = env::var("DEBUG")
         .ok()
@@ -238,22 +245,12 @@ fn main() {
     };
     info!("Fan device: {fan_device}");
 
-    let sleep_time = env::var("SLEEP_TIME")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(5);
-    let max_threshold = env::var("MAX_THRESHOLD")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(UPPER_TEMP_THRESHOLD);
-    let min_threshold = env::var("MIN_THRESHOLD")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(LOWER_TEMP_THRESHOLD);
-    let min_state = env::var("MIN_STATE")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(MIN_STATE);
+    let sleep_time = get_env("SLEEP_TIME", 5);
+
+    let max_threshold = get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
+
+    let min_threshold = get_env("MIN_THRESHOLD", LOWER_TEMP_THRESHOLD);
+    let min_state = get_env("MIN_STATE", MIN_STATE);
     let max_state: Option<u32> = env::var("MAX_STATE")
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
@@ -522,5 +519,52 @@ mod tests {
         let desired_state = desired_slot.0;
 
         assert_eq!(desired_state, 2);
+    }
+
+    #[test]
+    fn test_env_exists_and_valid() {
+        unsafe { env::set_var("TEST_PORT", "3000") };
+        let port: u16 = get_env("TEST_PORT", 8080);
+        assert_eq!(port, 3000);
+        unsafe { env::remove_var("TEST_PORT") };
+    }
+
+    #[test]
+    fn test_env_not_set() {
+        unsafe { env::remove_var("TEST_PORT") };
+        let port: u16 = get_env("TEST_PORT", 8080);
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn test_env_invalid_format() {
+        unsafe { env::set_var("TEST_PORT", "not_a_number") };
+        let port: u16 = get_env("TEST_PORT", 8080);
+        assert_eq!(port, 8080);
+        unsafe { env::remove_var("TEST_PORT") };
+    }
+
+    #[test]
+    fn test_string_env() {
+        unsafe { env::set_var("TEST_NAME", "Alice") };
+        let name: String = get_env("TEST_NAME", "default".to_string());
+        assert_eq!(name, "Alice".to_string());
+        unsafe { env::remove_var("TEST_NAME") };
+    }
+
+    #[test]
+    fn test_bool_env() {
+        unsafe { env::set_var("DEBUG", "true") };
+        let debug: bool = get_env("DEBUG", false);
+        assert_eq!(debug, true);
+        unsafe { env::remove_var("DEBUG") };
+    }
+
+    #[test]
+    fn test_bool_env_invalid() {
+        unsafe { env::set_var("DEBUG", "yes") };
+        let debug: bool = get_env("DEBUG", false);
+        assert_eq!(debug, false);
+        unsafe { env::remove_var("DEBUG") };
     }
 }
