@@ -8,8 +8,8 @@ This runs as a background service. You can configure the fan speed based on the 
 Download the binary from the [latest release](https://github.com/martabal/cm3588-fan/releases/latest/download/cm3588-fan) and install it in `/usr/local/bin/cm3588-fan`. Download the systemd service from the [latest release](https://github.com/martabal/cm3588-fan/releases/latest/download/cm3588-fan.service) and install it in `/etc/systemd/system/cm3588-fan.service`. Then enable and start the service with :
 
 ```bash
-systemctl enable primitive-fan-control.service
-systemctl start primitive-fan-control.service
+systemctl enable cm3588-fan.service
+systemctl start cm3588-fan.service
 ```
 
 ## Environment variables
