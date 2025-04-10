@@ -98,13 +98,20 @@ fn get_device_max_state(device: &str) -> Result<u32, Box<dyn Error>> {
 }
 
 fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
-    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
+    let num_slots = config.state.max_state.unwrap_or(max_state) - config.state.min_state;
+    let step =
+        (config.threshold.max_threshold - config.threshold.min_threshold) / (num_slots - 1) as f64;
 
-    (0..=max_state)
+    trace!(
+        "Calculate slots, min_state: {}, num_slots: {num_slots}, step: {step}",
+        config.state.min_state
+    );
+
+    (0..num_slots)
         .map(|i| {
             (
-                i + config.state.min_state,
-                i as f64 * step + config.threshold.min_threshold,
+                i + 1 + config.state.min_state,
+                config.threshold.min_threshold + i as f64 * step,
             )
         })
         .collect()
@@ -177,7 +184,7 @@ fn adjust_speed(
         }
     }
 
-    let (path, _, slots) = fan_device.as_ref().unwrap();
+    let (path, max_state, slots) = fan_device.as_ref().unwrap();
 
     let file_content = match fs::read_to_string(format!("{}/{}", path, FILE_NAME_CUR_STATE)) {
         Ok(content) => content,
@@ -190,13 +197,25 @@ fn adjust_speed(
 
     match file_content.trim().parse::<u32>() {
         Ok(speed) => {
-            let fallback = (config.state.min_state, config.threshold.min_threshold);
-            let desired = slots
-                .iter()
-                .rev()
-                .find(|(_, t)| *t <= current_temp)
-                .unwrap_or(slots.first().unwrap_or(&fallback));
-            let desired_state = desired.0;
+            let desired_state: u32 = match current_temp {
+                t if t <= config.threshold.min_threshold => {
+                    trace!("min state desired");
+                    config.state.min_state
+                }
+                t if t <= config.threshold.max_threshold => {
+                    trace!("desired state in slots");
+                    slots
+                        .iter()
+                        .rev()
+                        .find(|(_, temp)| *temp <= current_temp)
+                        .map(|(state, _)| *state)
+                        .unwrap_or(config.state.min_state)
+                }
+                _ => {
+                    trace!("max state desired {max_state}");
+                    config.state.max_state.unwrap_or(*max_state)
+                }
+            };
 
             if speed != desired_state || !*is_init {
                 info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
@@ -437,10 +456,12 @@ mod tests {
     #[test]
     fn test_get_temperature_slots() {
         let max_state = 5;
+        let min_threshold = 40.0;
+        let max_threshold = 80.0;
         let fan = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 80.0,
+                min_threshold,
+                max_threshold,
             },
             state: State {
                 max_state: Some(max_state),
@@ -449,15 +470,16 @@ mod tests {
         };
 
         let slots = calculate_slots(&fan, max_state);
+        let slots_len = 5;
 
-        assert_eq!(slots.len(), 6);
-        assert_eq!(slots[0], (0, 40.0));
-        assert_eq!(slots[5], (5, 80.0));
+        assert_eq!(slots.len(), slots_len);
+        assert_eq!(slots[0], (1, 40.0));
+        assert_eq!(slots[4], (5, max_threshold));
 
-        let step = (80.0 - 40.0) / 5.0;
-        assert_eq!(slots[1], (1, 40.0 + step));
-        assert_eq!(slots[2], (2, 40.0 + 2.0 * step));
-        assert_eq!(slots[3], (3, 40.0 + 3.0 * step));
+        let step = (max_threshold - min_threshold) / 4.0;
+        assert_eq!(slots[1], (2, min_threshold + step));
+        assert_eq!(slots[2], (3, min_threshold + 2.0 * step));
+        assert_eq!(slots[3], (4, min_threshold + 3.0 * step));
     }
 
     #[test]
@@ -493,7 +515,7 @@ mod tests {
             .unwrap_or(&fallback);
         let desired_state = desired_slot.0;
 
-        assert_eq!(desired_state, 2);
+        assert_eq!(desired_state, 3);
     }
 
     #[test]
