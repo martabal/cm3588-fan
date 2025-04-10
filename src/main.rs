@@ -13,7 +13,9 @@ const LOWER_TEMP_THRESHOLD: f64 = 45.0;
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
 const MIN_STATE: u32 = 0;
 
-struct Fan {
+type FanDevice = Option<(String, u32, Vec<(u32, f64)>)>;
+
+struct Config {
     threshold: Threshold,
     state: State,
 }
@@ -28,18 +30,16 @@ struct Threshold {
     max_threshold: f64,
 }
 
-fn check_config(max_state: &Option<u32>, min_state: u32, fan_device: &Option<String>) {
+fn check_config(max_state: &Option<u32>, min_state: u32, fan_device: &FanDevice) {
     if let Some(max) = max_state {
         if min_state >= *max {
             panic!("min_state can't be >= max_state: {min_state} >= {max}");
         }
 
         match fan_device {
-            Some(device) => {
-                let device_max = get_device_max_state(device);
-
-                if *max > device_max {
-                    panic!("Configured max_state {max} exceeds device max_state {device_max}");
+            Some((_, max_state, _)) => {
+                if *max > *max_state {
+                    panic!("Configured max_state {max} exceeds device max_state {max_state}");
                 }
             }
             None => warn!("max_state can't be checked because fan_device is not detected"),
@@ -80,7 +80,7 @@ fn setup_logging(debug_mode: bool) {
 
     println!("Log level set to: {level_filter}");
     let msg = format!(
-        "Starting PWM Fan Control Service v{}",
+        "Starting PWM Config Control Service v{}",
         env!("CARGO_PKG_VERSION")
     );
 
@@ -91,31 +91,27 @@ fn setup_logging(debug_mode: bool) {
     }
 }
 
-fn get_device_max_state(device: &str) -> u32 {
-    fs::read_to_string(format!("{device}/max_state"))
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+fn get_device_max_state(device: &str) -> Result<u32, Box<dyn Error>> {
+    let content = fs::read_to_string(format!("{device}/max_state"))?;
+    let parsed = content.trim().parse::<u32>()?;
+    Ok(parsed)
 }
 
-fn calculate_slots(fan: &Fan, max_state: u32) -> Vec<(u32, f64)> {
-    let step = (fan.threshold.max_threshold - fan.threshold.min_threshold) / max_state as f64;
+fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+    let step = (config.threshold.max_threshold - config.threshold.min_threshold) / max_state as f64;
 
     (0..=max_state)
         .map(|i| {
             (
-                i + fan.state.min_state,
-                i as f64 * step + fan.threshold.min_threshold,
+                i + config.state.min_state,
+                i as f64 * step + config.threshold.min_threshold,
             )
         })
         .collect()
 }
 
-fn get_temperature_slots(fan: &Fan, fan_device: &String) -> Vec<(u32, f64)> {
-    let max_state = fan
-        .state
-        .max_state
-        .unwrap_or_else(|| get_device_max_state(fan_device));
+fn get_temperature_slots(config: &Config, fan_device: &String, max_state: &u32) -> Vec<(u32, f64)> {
+    let max_state = config.state.max_state.unwrap_or(*max_state);
 
     trace!("max_state: {max_state}");
     if max_state == 0 {
@@ -123,7 +119,7 @@ fn get_temperature_slots(fan: &Fan, fan_device: &String) -> Vec<(u32, f64)> {
         return vec![];
     }
 
-    let slots = calculate_slots(fan, max_state);
+    let slots = calculate_slots(config, max_state);
     trace!("Slots: {:?}", slots);
     slots
 }
@@ -167,15 +163,21 @@ fn get_current_temp() -> Result<f64, Box<dyn Error>> {
     max_temp.ok_or_else(|| Box::from("No valid thermal zone found"))
 }
 
-fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &mut Option<String>) {
+fn adjust_speed(
+    current_temp: f64,
+    is_init: &mut bool,
+    config: &Config,
+    fan_device: &mut FanDevice,
+) {
     if fan_device.is_none() {
-        *fan_device = get_fan_device();
-        if fan_device.is_none() {
+        if let Some(path) = get_fan_device() {
+            *fan_device = new_fan_device(path, config);
+        } else {
             return;
         }
     }
 
-    let path = fan_device.as_ref().unwrap();
+    let (path, _, slots) = fan_device.as_ref().unwrap();
 
     let file_content = match fs::read_to_string(format!("{}/{}", path, FILE_NAME_CUR_STATE)) {
         Ok(content) => content,
@@ -188,8 +190,7 @@ fn adjust_speed(current_temp: f64, is_init: &mut bool, fan: &Fan, fan_device: &m
 
     match file_content.trim().parse::<u32>() {
         Ok(speed) => {
-            let slots = get_temperature_slots(fan, path);
-            let fallback = (fan.state.min_state, fan.threshold.min_threshold);
+            let fallback = (config.state.min_state, config.threshold.min_threshold);
             let desired = slots
                 .iter()
                 .rev()
@@ -230,20 +231,15 @@ fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
         .unwrap_or(fallback)
 }
 
+fn new_fan_device(device: String, config: &Config) -> FanDevice {
+    let max_state = get_device_max_state(&device).unwrap();
+    let slots = get_temperature_slots(config, &device, &max_state);
+    Some((device, max_state, slots))
+}
+
 fn main() {
     let debug = get_env("DEBUG", false);
     setup_logging(debug);
-
-    let mut fan_device = match get_fan_device() {
-        Some(device) => {
-            info!("Fan device: {device}");
-            Some(device)
-        }
-        None => {
-            error!("No PWM fan device found");
-            None
-        }
-    };
 
     let sleep_time = get_env("SLEEP_TIME", 5);
     let max_threshold = get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
@@ -255,13 +251,7 @@ fn main() {
         .and_then(|s| s.parse::<u32>().ok())
         .filter(|v| (1..=4).contains(v));
 
-    if min_threshold >= max_threshold {
-        panic!("min_threshold ({min_threshold}) >= max_threshold ({max_threshold})");
-    }
-
-    check_config(&max_state, min_state, &fan_device);
-
-    let fan = Fan {
+    let config: Config = Config {
         threshold: Threshold {
             min_threshold,
             max_threshold,
@@ -272,12 +262,29 @@ fn main() {
         },
     };
 
+    let mut fan_device = match get_fan_device() {
+        Some(device) => {
+            info!("Config device: {device}");
+            new_fan_device(device, &config)
+        }
+        None => {
+            error!("No PWM fan device found");
+            None
+        }
+    };
+
+    if min_threshold >= max_threshold {
+        panic!("min_threshold ({min_threshold}) >= max_threshold ({max_threshold})");
+    }
+
+    check_config(&max_state, min_state, &fan_device);
+
     let mut is_init = false;
 
     loop {
         match get_current_temp() {
             Ok(temp) => {
-                adjust_speed(temp, &mut is_init, &fan, &mut fan_device);
+                adjust_speed(temp, &mut is_init, &config, &mut fan_device);
             }
             Err(err) => {
                 error!("Can't read temperature {err}")
@@ -430,7 +437,7 @@ mod tests {
     #[test]
     fn test_get_temperature_slots() {
         let max_state = 5;
-        let fan = Fan {
+        let fan = Config {
             threshold: Threshold {
                 min_threshold: 40.0,
                 max_threshold: 80.0,
@@ -463,7 +470,7 @@ mod tests {
 
         let max_state = 5;
 
-        let fan = Fan {
+        let fan = Config {
             threshold: Threshold {
                 min_threshold: 40.0,
                 max_threshold: 80.0,
