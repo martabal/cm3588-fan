@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "cm3588-fan"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "colored",
  "env_logger",
