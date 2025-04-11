@@ -25,3 +25,15 @@ jobs:
           files: build/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Append Rust version to release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUST_VERSION=$(grep -oP '^FROM rust:\K[^@]+' Dockerfile)
+
+          RELEASE_NOTES=$(gh release view ${{ github.event.release.tag_name }} --json body --jq '.body')
+
+          RELEASE_NOTES="${RELEASE_NOTES}\n\n*Binary in the release is compiled with Rust ${RUST_VERSION}*"
+
+          gh release edit ${{ github.event.release.tag_name }} --notes "${RELEASE_NOTES}"
