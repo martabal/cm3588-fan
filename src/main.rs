@@ -267,8 +267,7 @@ fn main() {
 
     let max_state = env::var("MAX_STATE")
         .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .filter(|v| (1..=4).contains(v));
+        .and_then(|s| s.parse::<u32>().ok());
 
     let config: Config = Config {
         threshold: Threshold {
@@ -317,7 +316,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, path::Path};
+    use std::{cell::RefCell, collections::HashMap, panic, path::Path};
 
     use super::*;
 
@@ -563,5 +562,73 @@ mod tests {
         let debug: bool = get_env("DEBUG", false);
         assert_eq!(debug, false);
         unsafe { env::remove_var("DEBUG") };
+    }
+
+    fn assert_panics<F: FnOnce() + panic::UnwindSafe>(f: F, msg_contains: &str) {
+        let result = panic::catch_unwind(f);
+        assert!(
+            result.is_err(),
+            "Expected panic, but function did not panic"
+        );
+        let err = result.unwrap_err();
+        let err_msg = err
+            .downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| err.downcast_ref::<&str>().map(|s| *s))
+            .unwrap_or("<non-string panic>");
+        assert!(
+            err_msg.contains(msg_contains),
+            "Panic message did not contain '{msg_contains}': got '{err_msg}'"
+        );
+    }
+
+    #[test]
+    fn test_valid_config_with_fan_device() {
+        let max_state = Some(5);
+        let min_state = 3;
+        let fan_device = Some((
+            "fan0".to_string(),
+            5,
+            vec![(0, 0.0), (1, 30.0), (2, 60.0), (3, 80.0)],
+        ));
+        check_config(&max_state, min_state, &fan_device);
+    }
+
+    #[test]
+    fn test_valid_config_without_fan_device() {
+        let max_state = Some(5);
+        let min_state = 3;
+        let fan_device = None;
+        check_config(&max_state, min_state, &fan_device);
+    }
+
+    #[test]
+    fn test_min_state_greater_than_or_equal_to_max_panics() {
+        let max_state = Some(3);
+        let min_state = 3;
+        let fan_device = Some(("fan0".to_string(), 5, vec![(0, 0.0), (1, 30.0), (2, 60.0)]));
+        assert_panics(
+            || check_config(&max_state, min_state, &fan_device),
+            "min_state can't be >=",
+        );
+    }
+
+    #[test]
+    fn test_max_state_exceeds_device_max_panics() {
+        let max_state = Some(6);
+        let min_state = 3;
+        let fan_device = Some(("fan0".to_string(), 5, vec![(0, 0.0), (1, 30.0), (2, 60.0)]));
+        assert_panics(
+            || check_config(&max_state, min_state, &fan_device),
+            "exceeds device max_state",
+        );
+    }
+
+    #[test]
+    fn test_no_max_state_does_nothing() {
+        let max_state = None;
+        let min_state = 0;
+        let fan_device = Some(("fan0".to_string(), 3, vec![(0, 0.0), (1, 25.0)]));
+        check_config(&max_state, min_state, &fan_device);
     }
 }
