@@ -88,8 +88,7 @@ impl Config {
 
         let max_state = env::var("MAX_STATE")
             .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .filter(|v| (1..=4).contains(v));
+            .and_then(|s| s.parse::<u32>().ok());
         Self {
             sleep_time,
             threshold: Threshold {
