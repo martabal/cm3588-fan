@@ -2,6 +2,11 @@
 name = "cm3588-fan"
 version = "0.2.3"
 edition = "2024"
+rust-version = "1.85.1"
+license = "MIT"
+description = "Control your cm355 fan"
+homepage = "https://github.com/martabal/cm3588-fan"
+repository = "https://github.com/martabal/cm3588-fan"
 
 [dependencies]
 colored = "3.0.0"
