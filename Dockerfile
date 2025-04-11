@@ -15,6 +15,11 @@ COPY .cargo .cargo
 COPY Cargo* .
 COPY src src
 
-RUN cargo build --release --target=aarch64-unknown-linux-gnu
+RUN \
+  cargo \
+  build \
+  --locked \
+  --release \
+  --target=aarch64-unknown-linux-gnu
 
 ENTRYPOINT ["cp", "./target/aarch64-unknown-linux-gnu/release/cm3588-fan", "/build/cm3588-fan"]

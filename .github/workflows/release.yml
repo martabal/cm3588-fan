@@ -34,6 +34,6 @@ jobs:
 
           RELEASE_NOTES=$(gh release view ${{ github.event.release.tag_name }} --json body --jq '.body')
 
-          RELEASE_NOTES="${RELEASE_NOTES}\n\n*Binary in the release is compiled with Rust ${RUST_VERSION}*"
+          echo -e "${RELEASE_NOTES}\n\n*Binary in the release is compiled with Rust ${RUST_VERSION}*" > release-notes.md
 
-          gh release edit ${{ github.event.release.tag_name }} --notes "${RELEASE_NOTES}"
+          gh release edit ${{ github.event.release.tag_name }} --notes-file release-notes.md

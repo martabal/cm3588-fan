@@ -16,6 +16,15 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+
+          - platform: linux/arm64
+            runner: ubuntu-latest-arm
 
     steps:
       - name: Checkout code
@@ -32,6 +41,15 @@ jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+
+          - platform: linux/arm64
+            runner: ubuntu-latest-arm
 
     steps:
       - name: Checkout code
@@ -62,6 +80,15 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+
+          - platform: linux/arm64
+            runner: ubuntu-latest-arm
 
     steps:
       - name: Checkout code
@@ -76,6 +103,16 @@ jobs:
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+
+          - platform: linux/arm64
+            runner: ubuntu-latest-arm
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
