@@ -1,95 +1,14 @@
-use std::{env, error::Error, fs, io::Write, str::FromStr, thread, time::Duration};
+use std::{error::Error, fs, thread, time::Duration};
 
-use colored::Colorize;
-use env_logger::Builder;
-use log::{Level, LevelFilter, debug, error, info, trace, warn};
+use cm3588_fan::{FanDevice, config::Config};
+
+use log::{debug, error, info, trace};
 
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
 const THERMAL_DIR: &str = "/sys/class/thermal";
 const THERMAL_ZONE_NAME: &str = "thermal_zone";
 const FILE_NAME_CUR_STATE: &str = "cur_state";
-const LOWER_TEMP_THRESHOLD: f64 = 45.0;
-const UPPER_TEMP_THRESHOLD: f64 = 65.0;
-const MIN_STATE: u32 = 0;
-
-type FanDevice = Option<(String, u32, Vec<(u32, f64)>)>;
-
-struct Config {
-    threshold: Threshold,
-    state: State,
-}
-
-struct State {
-    max_state: Option<u32>,
-    min_state: u32,
-}
-
-struct Threshold {
-    min_threshold: f64,
-    max_threshold: f64,
-}
-
-fn check_config(max_state: &Option<u32>, min_state: u32, fan_device: &FanDevice) {
-    if let Some(max) = max_state {
-        if min_state >= *max {
-            panic!("min_state can't be >= max_state: {min_state} >= {max}");
-        }
-
-        match fan_device {
-            Some((_, max_state, _)) => {
-                if *max > *max_state {
-                    panic!("Configured max_state {max} exceeds device max_state {max_state}");
-                }
-            }
-            None => warn!("max_state can't be checked because fan_device is not detected"),
-        }
-    }
-}
-
-fn setup_logging(debug_mode: bool) {
-    let level_filter = match env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "info".into())
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "trace" => LevelFilter::Trace,
-        "debug" => LevelFilter::Debug,
-        "info" => LevelFilter::Info,
-        "warn" => LevelFilter::Warn,
-        "error" => LevelFilter::Error,
-        _ => LevelFilter::Debug,
-    };
-
-    let mut builder = Builder::new();
-
-    if !debug_mode {
-        builder.format(|f, r| {
-            let color = match r.level() {
-                Level::Warn => r.args().to_string().yellow(),
-                Level::Error => r.args().to_string().red(),
-                Level::Info => r.args().to_string().green(),
-                Level::Debug => r.args().to_string().blue(),
-                Level::Trace => r.args().to_string().cyan(),
-            };
-            writeln!(f, "{color}")
-        });
-    }
-
-    builder.filter_level(level_filter).init();
-
-    println!("Log level set to: {level_filter}");
-    let msg = format!(
-        "Starting PWM Config Control Service v{}",
-        env!("CARGO_PKG_VERSION")
-    );
-
-    if debug_mode {
-        info!("{msg}");
-    } else {
-        println!("{msg}");
-    }
-}
 
 fn get_device_max_state(device: &str) -> Result<u32, Box<dyn Error>> {
     let content = fs::read_to_string(format!("{device}/max_state"))?;
@@ -243,12 +162,6 @@ fn adjust_speed(
         }
     }
 }
-fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
-    env::var(key)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(fallback)
-}
 
 fn new_fan_device(device: String, config: &Config) -> FanDevice {
     let max_state = get_device_max_state(&device).unwrap();
@@ -257,28 +170,7 @@ fn new_fan_device(device: String, config: &Config) -> FanDevice {
 }
 
 fn main() {
-    let debug = get_env("DEBUG", false);
-    setup_logging(debug);
-
-    let sleep_time = get_env("SLEEP_TIME", 5);
-    let max_threshold = get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
-    let min_threshold = get_env("MIN_THRESHOLD", LOWER_TEMP_THRESHOLD);
-    let min_state = get_env("MIN_STATE", MIN_STATE);
-
-    let max_state = env::var("MAX_STATE")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok());
-
-    let config: Config = Config {
-        threshold: Threshold {
-            min_threshold,
-            max_threshold,
-        },
-        state: State {
-            max_state,
-            min_state,
-        },
-    };
+    let config = Config::new();
 
     let mut fan_device = match get_fan_device() {
         Some(device) => {
@@ -291,11 +183,7 @@ fn main() {
         }
     };
 
-    if min_threshold >= max_threshold {
-        panic!("min_threshold ({min_threshold}) >= max_threshold ({max_threshold})");
-    }
-
-    check_config(&max_state, min_state, &fan_device);
+    config.check_config(&fan_device);
 
     let mut is_init = false;
 
@@ -308,15 +196,17 @@ fn main() {
                 error!("Can't read temperature {err}")
             }
         }
-        debug!("Sleeping for {sleep_time} seconds");
+        debug!("Sleeping for {} seconds", config.sleep_time);
 
-        thread::sleep(Duration::from_secs(sleep_time));
+        thread::sleep(Duration::from_secs(config.sleep_time));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, panic, path::Path};
+    use std::{cell::RefCell, collections::HashMap, path::Path};
+
+    use cm3588_fan::config::{State, Threshold};
 
     use super::*;
 
@@ -458,6 +348,7 @@ mod tests {
         let min_threshold = 40.0;
         let max_threshold = 80.0;
         let fan = Config {
+            sleep_time: 5,
             threshold: Threshold {
                 min_threshold,
                 max_threshold,
@@ -500,6 +391,7 @@ mod tests {
                 max_state: Some(max_state),
                 min_state: 0,
             },
+            sleep_time: 5,
         };
 
         let current_temp = 60.0;
@@ -515,120 +407,5 @@ mod tests {
         let desired_state = desired_slot.0;
 
         assert_eq!(desired_state, 3);
-    }
-
-    #[test]
-    fn test_env_exists_and_valid() {
-        unsafe { env::set_var("TEST_PORT", "3000") };
-        let port: u16 = get_env("TEST_PORT", 8080);
-        assert_eq!(port, 3000);
-        unsafe { env::remove_var("TEST_PORT") };
-    }
-
-    #[test]
-    fn test_env_not_set() {
-        unsafe { env::remove_var("TEST_PORT") };
-        let port: u16 = get_env("TEST_PORT", 8080);
-        assert_eq!(port, 8080);
-    }
-
-    #[test]
-    fn test_env_invalid_format() {
-        unsafe { env::set_var("TEST_PORT", "not_a_number") };
-        let port: u16 = get_env("TEST_PORT", 8080);
-        assert_eq!(port, 8080);
-        unsafe { env::remove_var("TEST_PORT") };
-    }
-
-    #[test]
-    fn test_string_env() {
-        unsafe { env::set_var("TEST_NAME", "Alice") };
-        let name: String = get_env("TEST_NAME", "default".to_string());
-        assert_eq!(name, "Alice".to_string());
-        unsafe { env::remove_var("TEST_NAME") };
-    }
-
-    #[test]
-    fn test_bool_env() {
-        unsafe { env::set_var("DEBUG", "true") };
-        let debug: bool = get_env("DEBUG", false);
-        assert_eq!(debug, true);
-        unsafe { env::remove_var("DEBUG") };
-    }
-
-    #[test]
-    fn test_bool_env_invalid() {
-        unsafe { env::set_var("DEBUG", "yes") };
-        let debug: bool = get_env("DEBUG", false);
-        assert_eq!(debug, false);
-        unsafe { env::remove_var("DEBUG") };
-    }
-
-    fn assert_panics<F: FnOnce() + panic::UnwindSafe>(f: F, msg_contains: &str) {
-        let result = panic::catch_unwind(f);
-        assert!(
-            result.is_err(),
-            "Expected panic, but function did not panic"
-        );
-        let err = result.unwrap_err();
-        let err_msg = err
-            .downcast_ref::<String>()
-            .map(|s| s.as_str())
-            .or_else(|| err.downcast_ref::<&str>().map(|s| *s))
-            .unwrap_or("<non-string panic>");
-        assert!(
-            err_msg.contains(msg_contains),
-            "Panic message did not contain '{msg_contains}': got '{err_msg}'"
-        );
-    }
-
-    #[test]
-    fn test_valid_config_with_fan_device() {
-        let max_state = Some(5);
-        let min_state = 3;
-        let fan_device = Some((
-            "fan0".to_string(),
-            5,
-            vec![(0, 0.0), (1, 30.0), (2, 60.0), (3, 80.0)],
-        ));
-        check_config(&max_state, min_state, &fan_device);
-    }
-
-    #[test]
-    fn test_valid_config_without_fan_device() {
-        let max_state = Some(5);
-        let min_state = 3;
-        let fan_device = None;
-        check_config(&max_state, min_state, &fan_device);
-    }
-
-    #[test]
-    fn test_min_state_greater_than_or_equal_to_max_panics() {
-        let max_state = Some(3);
-        let min_state = 3;
-        let fan_device = Some(("fan0".to_string(), 5, vec![(0, 0.0), (1, 30.0), (2, 60.0)]));
-        assert_panics(
-            || check_config(&max_state, min_state, &fan_device),
-            "min_state can't be >=",
-        );
-    }
-
-    #[test]
-    fn test_max_state_exceeds_device_max_panics() {
-        let max_state = Some(6);
-        let min_state = 3;
-        let fan_device = Some(("fan0".to_string(), 5, vec![(0, 0.0), (1, 30.0), (2, 60.0)]));
-        assert_panics(
-            || check_config(&max_state, min_state, &fan_device),
-            "exceeds device max_state",
-        );
-    }
-
-    #[test]
-    fn test_no_max_state_does_nothing() {
-        let max_state = None;
-        let min_state = 0;
-        let fan_device = Some(("fan0".to_string(), 3, vec![(0, 0.0), (1, 25.0)]));
-        check_config(&max_state, min_state, &fan_device);
     }
 }
