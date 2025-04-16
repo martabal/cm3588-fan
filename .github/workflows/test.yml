@@ -35,7 +35,7 @@ jobs:
           components: clippy
 
       - name: Run linter
-        run: cargo clippy
+        run: cargo clippy --all -- -D warnings
         if: ${{ !cancelled() }}
 
   format:
