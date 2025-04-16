@@ -17,13 +17,13 @@ pub struct Config {
 }
 
 pub struct State {
-    pub max_state: Option<u32>,
-    pub min_state: u32,
+    pub max: Option<u32>,
+    pub min: u32,
 }
 
 pub struct Threshold {
-    pub min_threshold: f64,
-    pub max_threshold: f64,
+    pub max: f64,
+    pub min: f64,
 }
 
 impl Config {
@@ -91,28 +91,28 @@ impl Config {
         Self {
             sleep_time,
             threshold: Threshold {
-                min_threshold,
-                max_threshold,
+                max: max_threshold,
+                min: min_threshold,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
         }
     }
 
     pub fn check_config(&self, fan_device: Option<&Fan>) {
-        if self.threshold.min_threshold >= self.threshold.max_threshold {
+        if self.threshold.min >= self.threshold.max {
             panic!(
-                "min_threshold can't be >= max_threshold: {} >= {}",
-                self.threshold.min_threshold, self.threshold.max_threshold
+                "min threshold can't be >= max threshold: {} >= {}",
+                self.threshold.min, self.threshold.max
             );
         }
-        if let Some(max) = self.state.max_state {
-            if self.state.min_state >= max {
+        if let Some(max) = self.state.max {
+            if self.state.min >= max {
                 panic!(
-                    "min_state can't be >= max_state: {} >= {max}",
-                    self.state.min_state
+                    "min state can't be >= max state: {} >= {max}",
+                    self.state.min
                 );
             }
 
@@ -120,12 +120,12 @@ impl Config {
                 Some(fan) => {
                     if max > fan.max_state {
                         panic!(
-                            "Configured max_state {max} exceeds device max_state {}",
+                            "Configured max state {max} exceeds device max state {}",
                             fan.max_state
                         );
                     }
                 }
-                None => warn!("max_state can't be checked because fan_device is not detected"),
+                None => warn!("max state can't be checked because the fan is not detected"),
             }
         }
     }
@@ -164,12 +164,12 @@ mod tests {
 
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 40.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };
@@ -188,12 +188,12 @@ mod tests {
         let fan_device = None;
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 40.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };
@@ -207,12 +207,12 @@ mod tests {
 
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 40.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };
@@ -222,7 +222,7 @@ mod tests {
             temp_slots: vec![(0, 0.0), (1, 30.0), (2, 60.0)],
         };
 
-        assert_panics(|| config.check_config(Some(&fan)), "min_state can't be >=");
+        assert_panics(|| config.check_config(Some(&fan)), "min state can't be >=");
     }
 
     #[test]
@@ -232,12 +232,12 @@ mod tests {
 
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 40.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };
@@ -249,7 +249,7 @@ mod tests {
         };
         assert_panics(
             || config.check_config(Some(&fan)),
-            "exceeds device max_state",
+            "exceeds device max state",
         );
     }
 
@@ -260,12 +260,12 @@ mod tests {
 
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 80.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 80.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };
@@ -277,7 +277,7 @@ mod tests {
         };
         assert_panics(
             || config.check_config(Some(&fan)),
-            "min_threshold can't be >=",
+            "min threshold can't be >=",
         );
     }
 
@@ -288,12 +288,12 @@ mod tests {
 
         let config: Config = Config {
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 60.0,
+                max: 60.0,
+                min: 40.0,
             },
             state: State {
-                max_state,
-                min_state,
+                max: max_state,
+                min: min_state,
             },
             sleep_time: 5,
         };

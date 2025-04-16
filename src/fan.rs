@@ -2,9 +2,12 @@ use std::{error::Error, fs};
 
 use log::{error, info, trace};
 
-use crate::{
-    DEVICE_NAME_COOLING, DEVICE_TYPE_PWM_FAN, THERMAL_DIR, THERMAL_ZONE_NAME, config::Config,
-};
+use crate::config::Config;
+
+const DEVICE_NAME_COOLING: &str = "cooling_device";
+const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
+const THERMAL_DIR: &str = "/sys/class/thermal";
+const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 pub struct Fan {
     pub path: String,
@@ -59,20 +62,19 @@ impl Fan {
     }
 
     fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
-        let num_slots = config.state.max_state.unwrap_or(max_state) - config.state.min_state;
-        let step = (config.threshold.max_threshold - config.threshold.min_threshold)
-            / (num_slots - 1) as f64;
+        let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
+        let step = (config.threshold.max - config.threshold.min) / (num_slots - 1) as f64;
 
         trace!(
             "Calculate slots, min_state: {}, num_slots: {num_slots}, step: {step}",
-            config.state.min_state
+            config.state.min
         );
 
         (0..num_slots)
             .map(|i| {
                 (
-                    i + 1 + config.state.min_state,
-                    config.threshold.min_threshold + i as f64 * step,
+                    i + 1 + config.state.min,
+                    config.threshold.min + i as f64 * step,
                 )
             })
             .collect()
@@ -96,7 +98,7 @@ impl Fan {
         fan_device: &String,
         max_state: &u32,
     ) -> Vec<(u32, f64)> {
-        let max_state = config.state.max_state.unwrap_or(*max_state);
+        let max_state = config.state.max.unwrap_or(*max_state);
 
         trace!("max_state: {max_state}");
         if max_state == 0 {
@@ -128,7 +130,7 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, path::Path};
 
     use crate::{
-        FILE_NAME_CUR_STATE, THERMAL_DIR, THERMAL_ZONE_NAME,
+        FILE_NAME_CUR_STATE,
         config::{State, Threshold},
     };
 
@@ -274,12 +276,12 @@ mod tests {
         let fan = Config {
             sleep_time: 5,
             threshold: Threshold {
-                min_threshold,
-                max_threshold,
+                max: max_threshold,
+                min: min_threshold,
             },
             state: State {
-                max_state: Some(max_state),
-                min_state: 0,
+                max: Some(max_state),
+                min: 0,
             },
         };
 
@@ -307,22 +309,22 @@ mod tests {
         let max_state = 5;
 
         let fan = Config {
+            sleep_time: 5,
             threshold: Threshold {
-                min_threshold: 40.0,
-                max_threshold: 80.0,
+                max: 80.0,
+                min: 40.0,
             },
             state: State {
-                max_state: Some(max_state),
-                min_state: 0,
+                max: Some(max_state),
+                min: 0,
             },
-            sleep_time: 5,
         };
 
         let current_temp = 60.0;
 
         let slots = Fan::calculate_slots(&fan, max_state);
 
-        let fallback = (fan.state.min_state, fan.threshold.min_threshold);
+        let fallback = (fan.state.min, fan.threshold.min);
         let desired_slot = slots
             .iter()
             .filter(|(_, temp)| *temp <= current_temp)

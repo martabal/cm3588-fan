@@ -32,22 +32,22 @@ fn adjust_speed(
     match file_content.trim().parse::<u32>() {
         Ok(speed) => {
             let desired_state: u32 = match current_temp {
-                t if t <= config.threshold.min_threshold => {
+                t if t <= config.threshold.min => {
                     trace!("min state desired");
-                    config.state.min_state
+                    config.state.min
                 }
-                t if t <= config.threshold.max_threshold => {
+                t if t <= config.threshold.max => {
                     trace!("desired state in slots");
                     fan.temp_slots
                         .iter()
                         .rev()
                         .find(|(_, temp)| *temp <= current_temp)
                         .map(|(state, _)| *state)
-                        .unwrap_or(config.state.min_state)
+                        .unwrap_or(config.state.min)
                 }
                 _ => {
                     trace!("max state desired {}", fan.max_state);
-                    config.state.max_state.unwrap_or(fan.max_state)
+                    config.state.max.unwrap_or(fan.max_state)
                 }
             };
 
