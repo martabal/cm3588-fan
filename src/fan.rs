@@ -12,7 +12,7 @@ const THERMAL_ZONE_NAME: &str = "thermal_zone";
 pub struct Fan {
     pub path: String,
     pub max_state: u32,
-    pub temp_slots: Vec<(u32, f64)>,
+    pub temp_slots: Box<[(u32, f64)]>,
 }
 
 impl Fan {
@@ -61,7 +61,7 @@ impl Fan {
         max_temp.ok_or_else(|| Box::from("No valid thermal zone found"))
     }
 
-    fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+    fn calculate_slots(config: &Config, max_state: u32) -> Box<[(u32, f64)]> {
         let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
         let step = (config.threshold.max - config.threshold.min) / (num_slots - 1) as f64;
 
@@ -97,13 +97,13 @@ impl Fan {
         config: &Config,
         fan_device: &String,
         max_state: &u32,
-    ) -> Vec<(u32, f64)> {
+    ) -> Box<[(u32, f64)]> {
         let max_state = config.state.max.unwrap_or(*max_state);
 
         trace!("max_state: {max_state}");
         if max_state == 0 {
             error!("max_state could not be determined for {fan_device}");
-            return vec![];
+            return Box::new([]);
         }
 
         let slots = Self::calculate_slots(config, max_state);
