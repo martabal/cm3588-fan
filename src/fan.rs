@@ -10,7 +10,8 @@ const THERMAL_DIR: &str = "/sys/class/thermal";
 const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 pub struct Fan {
-    pub path: String,
+    pub fan_path: String,
+    pub temp_path: String,
     pub max_state: u32,
     pub temp_slots: Box<[(u32, f64)]>,
 }
@@ -22,12 +23,13 @@ impl Fan {
         Ok(parsed)
     }
 
-    pub fn new_fan_device(path: String, config: &Config) -> Self {
-        let max_state = Self::get_device_max_state(&path).unwrap();
-
-        let temp_slots = Self::get_temperature_slots(config, &path, &max_state);
+    pub fn new_fan_device(fan_path: String, config: &Config) -> Self {
+        let max_state = Self::get_device_max_state(&fan_path).unwrap();
+        let temp_path = Self::get_temp_path().unwrap();
+        let temp_slots = Self::get_temperature_slots(config, &fan_path, &max_state);
         let fan = Fan {
-            path,
+            temp_path,
+            fan_path,
             max_state,
             temp_slots,
         };
@@ -35,9 +37,12 @@ impl Fan {
         fan
     }
 
-    pub fn get_current_temp() -> Result<f64, Box<dyn Error>> {
-        let mut max_temp = None;
+    pub fn get_current_temp(&self) -> Result<f64, Box<dyn Error>> {
+        let temp = fs::read_to_string(&self.temp_path)?.trim().parse::<f64>()? / 1000.0;
+        Ok(temp)
+    }
 
+    fn get_temp_path() -> Result<String, Box<dyn Error>> {
         for entry in fs::read_dir(THERMAL_DIR)? {
             let entry = entry?;
             let path = entry.path();
@@ -50,15 +55,14 @@ impl Fan {
             {
                 let temp_path = path.join("temp");
                 if let Ok(s) = fs::read_to_string(&temp_path) {
-                    if let Ok(t) = s.trim().parse::<f64>() {
-                        let temp = t / 1000.0;
-                        max_temp = Some(max_temp.map_or(temp, |m: f64| m.max(temp)));
+                    if s.trim().parse::<f64>().is_ok() {
+                        return Ok(s);
                     }
                 }
             }
         }
 
-        max_temp.ok_or_else(|| Box::from("No valid thermal zone found"))
+        Err(Box::from("No valid thermal zone found"))
     }
 
     fn calculate_slots(config: &Config, max_state: u32) -> Box<[(u32, f64)]> {

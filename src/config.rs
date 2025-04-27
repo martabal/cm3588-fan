@@ -174,7 +174,8 @@ mod tests {
             sleep_time: 5,
         };
         let fan: Fan = Fan {
-            path: "fan0".to_string(),
+            fan_path: "fan0".to_string(),
+            temp_path: "temp".to_string(),
             max_state: 5,
             temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0), (3, 80.0)]),
         };
@@ -217,7 +218,8 @@ mod tests {
             sleep_time: 5,
         };
         let fan: Fan = Fan {
-            path: "fan0".to_string(),
+            fan_path: "fan0".to_string(),
+            temp_path: "temp".to_string(),
             max_state: 5,
             temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
         };
@@ -243,7 +245,8 @@ mod tests {
         };
 
         let fan: Fan = Fan {
-            path: "fan0".to_string(),
+            fan_path: "fan0".to_string(),
+            temp_path: "temp".to_string(),
             max_state: 5,
             temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
         };
@@ -271,7 +274,8 @@ mod tests {
         };
 
         let fan: Fan = Fan {
-            path: "fan0".to_string(),
+            fan_path: "fan0".to_string(),
+            temp_path: "temp".to_string(),
             max_state: 5,
             temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
         };
@@ -299,7 +303,8 @@ mod tests {
         };
 
         let fan: Fan = Fan {
-            path: "fan0".to_string(),
+            fan_path: "fan0".to_string(),
+            temp_path: "temp".to_string(),
             max_state: 5,
             temp_slots: Box::new([(0, 0.0), (1, 25.0)]),
         };

@@ -4,12 +4,7 @@ use log::{debug, error, info, trace};
 
 use cm3588_fan::{FILE_NAME_CUR_STATE, config::Config, fan::Fan};
 
-fn adjust_speed(
-    current_temp: f64,
-    is_init: &mut bool,
-    config: &Config,
-    fan_device: &mut Option<Fan>,
-) {
+fn adjust_speed(is_init: &mut bool, config: &Config, fan_device: &mut Option<Fan>) {
     if fan_device.is_none() {
         if let Some(path) = Fan::get_fan_device() {
             *fan_device = Some(Fan::new_fan_device(path, config));
@@ -20,11 +15,20 @@ fn adjust_speed(
 
     let fan = fan_device.as_ref().unwrap();
 
-    let file_content = match fs::read_to_string(format!("{}/{}", fan.path, FILE_NAME_CUR_STATE)) {
+    let file_content = match fs::read_to_string(format!("{}/{}", fan.fan_path, FILE_NAME_CUR_STATE))
+    {
         Ok(content) => content,
         Err(e) => {
             error!("Device is not available {e}");
             *fan_device = None;
+            return;
+        }
+    };
+
+    let current_temp = match fan.get_current_temp() {
+        Ok(temp) => temp,
+        Err(err) => {
+            error!("Can't read temperature {err}");
             return;
         }
     };
@@ -54,12 +58,12 @@ fn adjust_speed(
             if speed != desired_state || !*is_init {
                 info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
                 match fs::write(
-                    format!("{}/{FILE_NAME_CUR_STATE}", fan.path),
+                    format!("{}/{FILE_NAME_CUR_STATE}", fan.fan_path),
                     desired_state.to_string(),
                 ) {
                     Ok(_) => {}
                     Err(err) => {
-                        error!("Can't set the speed to device {} {err}", fan.path);
+                        error!("Can't set the speed to device {} {err}", fan.fan_path);
                         *fan_device = None;
                     }
                 }
@@ -86,14 +90,7 @@ fn main() {
     let mut is_init = false;
 
     loop {
-        match Fan::get_current_temp() {
-            Ok(temp) => {
-                adjust_speed(temp, &mut is_init, &config, &mut fan_device);
-            }
-            Err(err) => {
-                error!("Can't read temperature {err}")
-            }
-        }
+        adjust_speed(&mut is_init, &config, &mut fan_device);
         debug!("Sleeping for {} seconds", config.sleep_time);
 
         thread::sleep(Duration::from_secs(config.sleep_time));
