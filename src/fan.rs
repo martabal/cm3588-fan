@@ -42,7 +42,7 @@ impl Fan {
         Ok(temp)
     }
 
-    fn get_temp_path() -> Result<String, Box<dyn Error>> {
+    pub fn get_temp_path() -> Result<String, Box<dyn Error>> {
         for entry in fs::read_dir(THERMAL_DIR)? {
             let entry = entry?;
             let path = entry.path();
