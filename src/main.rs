@@ -28,7 +28,18 @@ fn adjust_speed(is_init: &mut bool, config: &Config, fan_device: &mut Option<Fan
     let current_temp = match fan.get_current_temp() {
         Ok(temp) => temp,
         Err(err) => {
-            error!("Can't read temperature {err}");
+            error!("Can't read temperature {err}, trying to re-read again");
+            match Fan::get_temp_path() {
+                Ok(path) => {
+                    if let Some(device) = fan_device {
+                        device.temp_path = path;
+                    }
+                }
+                Err(path_err) => {
+                    error!("Can't get temp path: {path_err}");
+                }
+            }
+
             return;
         }
     };
