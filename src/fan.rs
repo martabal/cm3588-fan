@@ -2,16 +2,13 @@ use std::{error::Error, fs};
 
 use log::{error, info, trace};
 
-use crate::config::Config;
+use crate::{THERMAL_DIR, config::Config};
 
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
-const THERMAL_DIR: &str = "/sys/class/thermal";
-const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 pub struct Fan {
-    pub fan_path: String,
-    pub temp_path: String,
+    pub path: String,
     pub max_state: u32,
     pub temp_slots: Box<[(u32, f64)]>,
 }
@@ -23,46 +20,17 @@ impl Fan {
         Ok(parsed)
     }
 
-    pub fn new_fan_device(fan_path: String, config: &Config) -> Self {
-        let max_state = Self::get_device_max_state(&fan_path).unwrap();
-        let temp_path = Self::get_temp_path().unwrap();
-        let temp_slots = Self::get_temperature_slots(config, &fan_path, &max_state);
+    pub fn new_fan_device(path: String, config: &Config) -> Self {
+        let max_state = Self::get_device_max_state(&path).unwrap();
+
+        let temp_slots = Self::get_temperature_slots(config, &path, &max_state);
         let fan = Fan {
-            temp_path,
-            fan_path,
+            path,
             max_state,
             temp_slots,
         };
         config.check_config(Some(&fan));
         fan
-    }
-
-    pub fn get_current_temp(&self) -> Result<f64, Box<dyn Error>> {
-        let temp = fs::read_to_string(&self.temp_path)?.trim().parse::<f64>()? / 1000.0;
-        Ok(temp)
-    }
-
-    pub fn get_temp_path() -> Result<String, Box<dyn Error>> {
-        for entry in fs::read_dir(THERMAL_DIR)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .map(|s| s.starts_with(THERMAL_ZONE_NAME))
-                .unwrap_or(false)
-            {
-                let temp_path = path.join("temp");
-                if let Ok(s) = fs::read_to_string(&temp_path) {
-                    if s.trim().parse::<f64>().is_ok() {
-                        return Ok(s);
-                    }
-                }
-            }
-        }
-
-        Err(Box::from("No valid thermal zone found"))
     }
 
     fn calculate_slots(config: &Config, max_state: u32) -> Box<[(u32, f64)]> {
@@ -131,119 +99,10 @@ impl Fan {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, path::Path};
 
-    use crate::{
-        FILE_NAME_CUR_STATE,
-        config::{State, Threshold},
-    };
+    use crate::config::{State, Threshold};
 
     use super::*;
-
-    struct MockFs {
-        files: RefCell<HashMap<String, String>>,
-        dirs: RefCell<HashMap<String, Vec<String>>>,
-    }
-
-    impl MockFs {
-        fn new() -> Self {
-            Self {
-                files: RefCell::new(HashMap::new()),
-                dirs: RefCell::new(HashMap::new()),
-            }
-        }
-
-        fn add_file(&self, path: &str, content: &str) {
-            self.files
-                .borrow_mut()
-                .insert(path.to_string(), content.to_string());
-        }
-
-        fn add_dir(&self, path: &str, entries: Vec<String>) {
-            self.dirs.borrow_mut().insert(path.to_string(), entries);
-        }
-    }
-
-    fn mock_read_dir(mock_fs: &MockFs, path: &str) -> Result<Vec<String>, std::io::Error> {
-        match mock_fs.dirs.borrow().get(path) {
-            Some(entries) => Ok(entries.clone()),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Directory not found",
-            )),
-        }
-    }
-
-    fn mock_read_to_string(mock_fs: &MockFs, path: &str) -> Result<String, std::io::Error> {
-        match mock_fs.files.borrow().get(path) {
-            Some(content) => Ok(content.clone()),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "File not found",
-            )),
-        }
-    }
-
-    #[test]
-    fn test_get_device_max_state() {
-        let mock_fs = MockFs::new();
-        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
-
-        mock_fs.add_file(&format!("{}/max_state", fan_device), "4");
-        let result = mock_read_to_string(&mock_fs, &format!("{}/max_state", fan_device))
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
-        assert_eq!(result, 4);
-
-        mock_fs.add_file(&format!("{}/max_state", fan_device), "invalid");
-        let result = mock_read_to_string(&mock_fs, &format!("{}/max_state", fan_device))
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
-        assert_eq!(result, 0);
-    }
-
-    #[test]
-    fn test_get_current_temp() {
-        let mock_fs = MockFs::new();
-
-        mock_fs.add_dir(
-            THERMAL_DIR,
-            vec![
-                format!("{}/thermal_zone0", THERMAL_DIR),
-                format!("{}/thermal_zone1", THERMAL_DIR),
-                format!("{}/cooling_device0", THERMAL_DIR),
-            ],
-        );
-
-        mock_fs.add_file(&format!("{}/thermal_zone0/temp", THERMAL_DIR), "45000");
-        mock_fs.add_file(&format!("{}/thermal_zone1/temp", THERMAL_DIR), "55000");
-
-        let result = {
-            let mut temps = vec![];
-            if let Ok(entries) = mock_read_dir(&mock_fs, THERMAL_DIR) {
-                for entry in entries {
-                    let path = Path::new(&entry);
-                    if let Some(file_name) = path.file_name() {
-                        if let Some(file_str) = file_name.to_str() {
-                            if file_str.starts_with(THERMAL_ZONE_NAME) {
-                                let temp_file = format!("{}/temp", path.to_string_lossy());
-                                if let Ok(content) = mock_read_to_string(&mock_fs, &temp_file) {
-                                    if let Ok(temp) = content.trim().parse::<f64>() {
-                                        temps.push(temp / 1000.0);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            temps.into_iter().fold(0.0, f64::max)
-        };
-
-        assert_eq!(result, 55.0);
-    }
 
     #[test]
     fn test_check_config() {
@@ -304,12 +163,6 @@ mod tests {
 
     #[test]
     fn test_adjust_speed() {
-        let mock_fs = MockFs::new();
-        let fan_device = format!("{}/cooling_device0", THERMAL_DIR);
-
-        mock_fs.add_file(&format!("{}/max_state", fan_device), "4");
-        mock_fs.add_file(&format!("{}/{}", fan_device, FILE_NAME_CUR_STATE), "1");
-
         let max_state = 5;
 
         let fan = Config {
