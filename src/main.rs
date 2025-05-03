@@ -64,25 +64,7 @@ fn adjust_speed(
 
     match file_content.trim().parse::<u32>() {
         Ok(speed) => {
-            let desired_state: u32 = match current_temp {
-                t if t <= config.threshold.min => {
-                    trace!("min state desired");
-                    config.state.min
-                }
-                t if t <= config.threshold.max => {
-                    trace!("desired state in slots");
-                    fan.temp_slots
-                        .iter()
-                        .rev()
-                        .find(|(_, temp)| *temp <= current_temp)
-                        .map(|(state, _)| *state)
-                        .unwrap_or(config.state.min)
-                }
-                _ => {
-                    trace!("max state desired {}", fan.max_state);
-                    config.state.max.unwrap_or(fan.max_state)
-                }
-            };
+            let desired_state: u32 = fan.choose_speed(current_temp, config);
             if let Some(last_state) = fan.last_state {
                 if last_state == desired_state {
                     trace!("state didn't change compared to the last time");

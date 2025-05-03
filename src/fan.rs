@@ -106,6 +106,28 @@ impl Fan {
             }
         }
     }
+
+    pub fn choose_speed(&self, current_temp: f64, config: &Config) -> u32 {
+        match current_temp {
+            t if t < config.threshold.min => {
+                trace!("min state desired");
+                config.state.min
+            }
+            t if t <= config.threshold.max => {
+                trace!("desired state in slots");
+                self.temp_slots
+                    .iter()
+                    .rev()
+                    .find(|(_, temp)| *temp <= current_temp)
+                    .map(|(state, _)| *state)
+                    .unwrap_or(config.state.min)
+            }
+            _ => {
+                trace!("max state desired {}", self.max_state);
+                config.state.max.unwrap_or(self.max_state)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -226,5 +248,145 @@ mod tests {
         let desired_state = desired_slot.0;
 
         assert_eq!(desired_state, 3);
+    }
+
+    fn setup_test_config() -> Config {
+        Config {
+            threshold: Threshold {
+                min: 45.0,
+                max: 70.0,
+            },
+            state: State {
+                min: 0,
+                max: Some(5),
+            },
+            sleep_time: 5,
+        }
+    }
+
+    fn setup_test_fan() -> Fan {
+        let temp_slots = vec![
+            (0, 45.0),
+            (1, 50.0),
+            (2, 55.0),
+            (3, 60.0),
+            (4, 65.0),
+            (5, 70.0),
+        ]
+        .into_boxed_slice();
+
+        Fan {
+            temp_slots,
+            max_state: 5,
+            path: "temp".to_owned(),
+            last_state: None,
+        }
+    }
+
+    #[test]
+    fn test_temp_below_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(25.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_temp_at_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(30.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_temp_in_between_slots() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(42.0, &config);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_temp_exactly_at_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(45.0, &config);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_temp_a_little_bit_more_than_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(45.0, &config);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_temp_above_max_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(70.0, &config);
+        assert_eq!(result, config.state.max.unwrap());
+    }
+
+    #[test]
+    fn test_temp_at_max_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(58.0, &config);
+        assert_eq!(result, 2);
+    }
+
+    #[test]
+    fn test_temp_below_all_slots() {
+        let config = setup_test_config();
+
+        let fan = Fan {
+            temp_slots: vec![(20, 40.0), (40, 50.0)].into_boxed_slice(),
+            max_state: 100,
+            path: "temp".to_string(),
+            last_state: None,
+        };
+
+        let result = fan.choose_speed(35.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_with_empty_slots() {
+        let config = setup_test_config();
+        let fan: Fan = Fan {
+            temp_slots: Vec::new().into_boxed_slice(),
+            max_state: 100,
+            path: "temp".to_string(),
+            last_state: None,
+        };
+
+        let result = fan.choose_speed(45.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_lower_max_state() {
+        let mut config = setup_test_config();
+        config.state.max = Some(3);
+        let fan = Fan {
+            temp_slots: vec![(0, 45.0), (1, 50.0), (2, 55.0), (3, 60.0)].into(),
+            max_state: 3,
+            path: "temp".to_string(),
+            last_state: None,
+        };
+
+        let result = fan.choose_speed(65.0, &config);
+        assert_eq!(result, 3);
     }
 }
