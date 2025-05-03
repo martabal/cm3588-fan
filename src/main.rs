@@ -20,7 +20,7 @@ fn adjust_speed(
         }
     }
 
-    let fan = fan_device.as_ref().unwrap();
+    let fan = fan_device.as_mut().unwrap();
 
     let file_content = match fs::read_to_string(format!("{}/{}", fan.path, FILE_NAME_CUR_STATE)) {
         Ok(content) => content,
@@ -83,14 +83,19 @@ fn adjust_speed(
                     config.state.max.unwrap_or(fan.max_state)
                 }
             };
-
+            if let Some(last_state) = fan.last_state {
+                if last_state == desired_state {
+                    trace!("state didn't change compared to the last time");
+                    return;
+                }
+            }
             if speed != desired_state || !*is_init {
                 info!("Adjusting fan speed to {desired_state} (Temp: {current_temp:.2}°C)");
                 match fs::write(
                     format!("{}/{FILE_NAME_CUR_STATE}", fan.path),
                     desired_state.to_string(),
                 ) {
-                    Ok(_) => {}
+                    Ok(_) => fan.last_state = Some(desired_state),
                     Err(err) => {
                         error!("Can't set the speed to device {} {err}", fan.path);
                         *fan_device = None;
