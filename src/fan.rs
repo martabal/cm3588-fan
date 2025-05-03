@@ -24,20 +24,25 @@ impl Fan {
     pub fn new_fan_device(path: String, config: &Config) -> Self {
         let max_state = Self::get_device_max_state(&path).unwrap();
 
+        config.check_config(max_state);
+
         let temp_slots = Self::get_temperature_slots(config, &path, &max_state);
-        let fan = Fan {
+        Fan {
             path,
             max_state,
             temp_slots,
             last_state: None,
-        };
-        config.check_config(Some(&fan));
-        fan
+        }
     }
 
     fn calculate_slots(config: &Config, max_state: u32) -> Box<[(u32, f64)]> {
         let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
-        let step = (config.threshold.max - config.threshold.min) / (num_slots - 1) as f64;
+
+        let step = if num_slots <= 1 {
+            0.0
+        } else {
+            (config.threshold.max - config.threshold.min) / (num_slots - 1) as f64
+        };
 
         trace!(
             "Calculate slots, min_state: {}, num_slots: {num_slots}, step: {step}",
@@ -48,7 +53,11 @@ impl Fan {
             .map(|i| {
                 (
                     i + 1 + config.state.min,
-                    config.threshold.min + i as f64 * step,
+                    if num_slots == 1 {
+                        config.threshold.min
+                    } else {
+                        config.threshold.min + i as f64 * step
+                    },
                 )
             })
             .collect()
@@ -161,6 +170,31 @@ mod tests {
         assert_eq!(slots[1], (2, min_threshold + step));
         assert_eq!(slots[2], (3, min_threshold + 2.0 * step));
         assert_eq!(slots[3], (4, min_threshold + 3.0 * step));
+    }
+
+    #[test]
+    fn test_get_temperature_one_slot() {
+        let min_state = 4;
+        let max_state = 5;
+        let min_threshold = 40.0;
+        let max_threshold = 80.0;
+        let fan = Config {
+            sleep_time: 5,
+            threshold: Threshold {
+                max: max_threshold,
+                min: min_threshold,
+            },
+            state: State {
+                max: Some(max_state),
+                min: min_state,
+            },
+        };
+
+        let slots = Fan::calculate_slots(&fan, max_state);
+        let slots_len = 1;
+
+        assert_eq!(slots.len(), slots_len);
+        assert_eq!(slots[0], (max_state, min_threshold));
     }
 
     #[test]
