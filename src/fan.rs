@@ -11,6 +11,7 @@ pub struct Fan {
     pub path: String,
     pub max_state: u32,
     pub temp_slots: Box<[(u32, f64)]>,
+    pub last_state: Option<u32>,
 }
 
 impl Fan {
@@ -28,6 +29,7 @@ impl Fan {
             path,
             max_state,
             temp_slots,
+            last_state: None,
         };
         config.check_config(Some(&fan));
         fan
