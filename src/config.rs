@@ -2,9 +2,7 @@ use std::{env, io::Write, str::FromStr};
 
 use colored::Colorize;
 use env_logger::Builder;
-use log::{Level, LevelFilter, info, warn};
-
-use crate::fan::Fan;
+use log::{Level, LevelFilter, info};
 
 const LOWER_TEMP_THRESHOLD: f64 = 45.0;
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
@@ -16,11 +14,12 @@ pub struct Config {
     pub sleep_time: u64,
 }
 
+#[derive(Debug)]
 pub struct State {
     pub max: Option<u32>,
     pub min: u32,
 }
-
+#[derive(Debug)]
 pub struct Threshold {
     pub max: f64,
     pub min: f64,
@@ -101,7 +100,7 @@ impl Config {
         }
     }
 
-    pub fn check_config(&self, fan_device: Option<&Fan>) {
+    pub fn check_config(&self, fan_max_state: u32) {
         if self.threshold.min >= self.threshold.max {
             panic!(
                 "min threshold can't be >= max threshold: {} >= {}",
@@ -116,17 +115,19 @@ impl Config {
                 );
             }
 
-            match fan_device {
-                Some(fan) => {
-                    if max > fan.max_state {
-                        panic!(
-                            "Configured max state {max} exceeds device max state {}",
-                            fan.max_state
-                        );
-                    }
-                }
-                None => warn!("max state can't be checked because the fan is not detected"),
+            if max > fan_max_state {
+                panic!(
+                    "Configured max state {max} exceeds device max state {}",
+                    fan_max_state
+                );
             }
+        }
+
+        if self.state.min > fan_max_state {
+            panic!(
+                "Configured min state {} exceeds device max state {}",
+                self.state.min, fan_max_state
+            );
         }
     }
 }
@@ -135,7 +136,7 @@ impl Config {
 mod tests {
     use std::panic;
 
-    use crate::{config::Config, fan::Fan};
+    use crate::config::Config;
 
     use super::{State, Threshold};
 
@@ -173,32 +174,29 @@ mod tests {
             },
             sleep_time: 5,
         };
-        let fan: Fan = Fan {
-            path: "fan0".to_string(),
-            max_state: 5,
-            temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0), (3, 80.0)]),
-            last_state: None,
-        };
-        config.check_config(Some(&fan));
+        config.check_config(5);
     }
 
     #[test]
-    fn test_valid_config_without_fan_device() {
-        let max_state = Some(5);
-        let min_state = 3;
-        let fan_device = None;
+    fn test_min_state_superior_to_device_max_state() {
+        let max_state = 5;
+        let min_state = 6;
         let config: Config = Config {
             threshold: Threshold {
                 max: 60.0,
                 min: 40.0,
             },
             state: State {
-                max: max_state,
+                max: None,
                 min: min_state,
             },
             sleep_time: 5,
         };
-        config.check_config(fan_device);
+        let msg_contains = format!(
+            "Configured min state {} exceeds device max state {}",
+            min_state, max_state
+        );
+        assert_panics(|| config.check_config(5), &msg_contains);
     }
 
     #[test]
@@ -217,14 +215,8 @@ mod tests {
             },
             sleep_time: 5,
         };
-        let fan: Fan = Fan {
-            path: "fan0".to_string(),
-            max_state: 5,
-            temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
-            last_state: None,
-        };
 
-        assert_panics(|| config.check_config(Some(&fan)), "min state can't be >=");
+        assert_panics(|| config.check_config(5), "min state can't be >=");
     }
 
     #[test]
@@ -244,16 +236,7 @@ mod tests {
             sleep_time: 5,
         };
 
-        let fan: Fan = Fan {
-            path: "fan0".to_string(),
-            max_state: 5,
-            temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
-            last_state: None,
-        };
-        assert_panics(
-            || config.check_config(Some(&fan)),
-            "exceeds device max state",
-        );
+        assert_panics(|| config.check_config(5), "exceeds device max state");
     }
 
     #[test]
@@ -273,16 +256,7 @@ mod tests {
             sleep_time: 5,
         };
 
-        let fan: Fan = Fan {
-            path: "fan0".to_string(),
-            max_state: 5,
-            temp_slots: Box::new([(0, 0.0), (1, 30.0), (2, 60.0)]),
-            last_state: None,
-        };
-        assert_panics(
-            || config.check_config(Some(&fan)),
-            "min threshold can't be >=",
-        );
+        assert_panics(|| config.check_config(5), "min threshold can't be >=");
     }
 
     #[test]
@@ -302,12 +276,6 @@ mod tests {
             sleep_time: 5,
         };
 
-        let fan: Fan = Fan {
-            path: "fan0".to_string(),
-            max_state: 5,
-            temp_slots: Box::new([(0, 0.0), (1, 25.0)]),
-            last_state: None,
-        };
-        config.check_config(Some(&fan));
+        config.check_config(5);
     }
 }
