@@ -33,12 +33,12 @@ impl Temp {
                 .unwrap_or(false)
             {
                 let temp_path = path.join("temp");
-                if let Ok(s) = fs::read_to_string(&temp_path) {
-                    if s.trim().parse::<f64>().is_ok() {
-                        let path: String = temp_path.to_string_lossy().into_owned();
-                        info!("Temp path: {path}");
-                        return Ok(path);
-                    }
+                if let Ok(s) = fs::read_to_string(&temp_path)
+                    && s.trim().parse::<f64>().is_ok()
+                {
+                    let path: String = temp_path.to_string_lossy().into_owned();
+                    info!("Temp path: {path}");
+                    return Ok(path);
                 }
             }
         }

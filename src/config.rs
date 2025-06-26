@@ -116,10 +116,7 @@ impl Config {
             }
 
             if max > fan_max_state {
-                panic!(
-                    "Configured max state {max} exceeds device max state {}",
-                    fan_max_state
-                );
+                panic!("Configured max state {max} exceeds device max state {fan_max_state}");
             }
         }
 
