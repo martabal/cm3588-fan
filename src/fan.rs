@@ -97,7 +97,7 @@ impl Fan {
     pub fn new(config: &Config) -> Option<Self> {
         match Self::get_fan_device() {
             Some(device) => {
-                info!("Config device: {device}");
+                info!("Fan device: {device}");
                 Some(Self::new_fan_device(device, config))
             }
             None => {
@@ -110,11 +110,11 @@ impl Fan {
     pub fn choose_speed(&self, current_temp: f64, config: &Config) -> u32 {
         match current_temp {
             t if t < config.threshold.min => {
-                trace!("min state desired");
+                trace!("Min state desired");
                 config.state.min
             }
             t if t <= config.threshold.max => {
-                trace!("desired state in slots");
+                trace!("Desired state in slots");
                 self.temp_slots
                     .iter()
                     .rev()
@@ -123,7 +123,7 @@ impl Fan {
                     .unwrap_or(config.state.min)
             }
             _ => {
-                trace!("max state desired {}", self.max_state);
+                trace!("Max state desired {}", self.max_state);
                 config.state.max.unwrap_or(self.max_state)
             }
         }
