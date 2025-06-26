@@ -90,7 +90,7 @@ impl Fan {
         }
 
         let slots = Self::calculate_slots(config, max_state);
-        trace!("Slots: {:?}", slots);
+        trace!("Slots: {slots:?}");
         slots
     }
 
@@ -144,10 +144,10 @@ mod tests {
 
         let mut panic_occurred = false;
 
-        if let Some(max) = max_state {
-            if min_state >= max {
-                panic_occurred = true;
-            }
+        if let Some(max) = max_state
+            && min_state >= max
+        {
+            panic_occurred = true;
         }
 
         assert!(!panic_occurred);
@@ -155,10 +155,10 @@ mod tests {
         let min_state = 3;
 
         let mut panic_occurred = false;
-        if let Some(max) = max_state {
-            if min_state >= max {
-                panic_occurred = true;
-            }
+        if let Some(max) = max_state
+            && min_state >= max
+        {
+            panic_occurred = true;
         }
 
         assert!(panic_occurred);
