@@ -1,6 +1,5 @@
 use std::{env, io::Write, str::FromStr};
 
-use colored::Colorize;
 use env_logger::Builder;
 use log::{Level, LevelFilter, info};
 
@@ -13,6 +12,12 @@ pub struct Config {
     pub state: State,
     pub sleep_time: u64,
 }
+const RED: &str = "\x1b[31m";
+const YELLOW: &str = "\x1b[33m";
+const GREEN: &str = "\x1b[32m";
+const BLUE: &str = "\x1b[34m";
+const CYAN: &str = "\x1b[36m";
+const RESET: &str = "\x1b[0m";
 
 #[derive(Debug)]
 pub struct State {
@@ -26,6 +31,16 @@ pub struct Threshold {
 }
 
 impl Config {
+    fn get_level_color<T: Into<Option<Level>>>(level: T) -> &'static str {
+        match level.into() {
+            Some(Level::Error) => RED,
+            Some(Level::Warn) => YELLOW,
+            Some(Level::Info) => GREEN,
+            Some(Level::Debug) => BLUE,
+            Some(Level::Trace) => CYAN,
+            None => RESET,
+        }
+    }
     fn setup_logging(debug_mode: bool) {
         let level_filter = match env::var("LOG_LEVEL")
             .unwrap_or_else(|_| "info".into())
@@ -44,20 +59,19 @@ impl Config {
 
         if !debug_mode {
             builder.format(|f, r| {
-                let color = match r.level() {
-                    Level::Warn => r.args().to_string().yellow(),
-                    Level::Error => r.args().to_string().red(),
-                    Level::Info => r.args().to_string().green(),
-                    Level::Debug => r.args().to_string().blue(),
-                    Level::Trace => r.args().to_string().cyan(),
-                };
-                writeln!(f, "{color}")
+                let color = Self::get_level_color(r.level());
+                writeln!(f, "{}{}{}", color, r.args(), RESET)
             });
         }
 
         builder.filter_level(level_filter).init();
 
-        println!("Log level set to: {level_filter}");
+        println!(
+            "Log level set to: {}{}{RESET}",
+            Self::get_level_color(level_filter.to_level()),
+            level_filter
+        );
+
         let msg = format!(
             "Starting PWM Config Control Service v{}",
             env!("CARGO_PKG_VERSION")
@@ -69,7 +83,6 @@ impl Config {
             println!("{msg}");
         }
     }
-
     fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
         env::var(key)
             .ok()
