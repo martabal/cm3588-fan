@@ -2,7 +2,7 @@ use std::fs;
 
 use log::{debug, error, info, trace};
 
-use crate::{FILE_NAME_CUR_STATE, config::Config, fan::Fan, temp::Temp};
+use crate::{config::Config, fan::Fan, temp::Temp};
 
 pub struct Checker {
     is_init: bool,
@@ -50,8 +50,7 @@ impl Checker {
         }
 
         let fan = self.fan_device.as_mut().unwrap();
-        let state_path = format!("{}/{}", fan.path, FILE_NAME_CUR_STATE);
-        let current_speed: u32 = match fs::read_to_string(&state_path) {
+        let current_speed: u32 = match fs::read_to_string(&fan.path) {
             Ok(content) => match content.trim().parse::<u32>() {
                 Ok(speed) => speed,
                 Err(e) => {
@@ -85,14 +84,7 @@ impl Checker {
             Err(err) => {
                 error!("Can't read temperature: {err}");
 
-                if let Ok(path) = Temp::get_temp_path()
-                    && let Some(device) = &mut self.temp_device
-                {
-                    device.path = path;
-                } else {
-                    error!("Can't get temp path");
-                }
-
+                self.temp_device = None;
                 return;
             }
         };
@@ -112,7 +104,7 @@ impl Checker {
                 self.is_init = true;
             }
             info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
-            if fs::write(&state_path, desired_speed.to_string()).is_ok() {
+            if fs::write(&fan.path, desired_speed.to_string()).is_ok() {
                 fan.last_state = Some(desired_speed);
             } else {
                 error!("Can't set speed on device {}", fan.path);

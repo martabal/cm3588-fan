@@ -4,6 +4,7 @@ use log::{error, info, trace};
 
 use crate::{THERMAL_DIR, config::Config};
 
+const FILE_NAME_CUR_STATE: &str = "cur_state";
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
 
@@ -69,7 +70,11 @@ impl Fan {
             if path.file_name()?.to_str()?.starts_with(DEVICE_NAME_COOLING) {
                 let content = fs::read_to_string(path.join("type")).ok()?;
                 if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    return Some(path.to_string_lossy().into_owned());
+                    return Some(format!(
+                        "{}/{}",
+                        path.to_string_lossy().into_owned(),
+                        FILE_NAME_CUR_STATE
+                    ));
                 }
             }
             None
