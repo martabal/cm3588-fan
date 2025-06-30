@@ -40,9 +40,9 @@ impl Checker {
 
     pub fn adjust_speed(&mut self) {
         if self.fan_device.is_none() {
-            if let Some(path) = Fan::get_fan_device() {
+            if let Some((fan_path, path)) = Fan::get_fan_device() {
                 trace!("New fan device detected");
-                self.fan_device = Some(Fan::new_fan_device(path, &self.config));
+                self.fan_device = Some(Fan::new_fan_device(fan_path, path, &self.config));
             } else {
                 error!("Still no fan device available");
                 return;
@@ -50,7 +50,7 @@ impl Checker {
         }
 
         let fan = self.fan_device.as_mut().unwrap();
-        let current_speed: u32 = match fs::read_to_string(&fan.path) {
+        let current_speed: u32 = match fs::read_to_string(&fan.state) {
             Ok(content) => match content.trim().parse::<u32>() {
                 Ok(speed) => speed,
                 Err(e) => {
@@ -104,10 +104,10 @@ impl Checker {
                 self.is_init = true;
             }
             info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
-            if fs::write(&fan.path, desired_speed.to_string()).is_ok() {
+            if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
                 fan.last_state = Some(desired_speed);
             } else {
-                error!("Can't set speed on device {}", fan.path);
+                error!("Can't set speed on device {}", fan.state);
                 self.fan_device = None;
             }
         } else {
