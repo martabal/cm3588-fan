@@ -83,7 +83,6 @@ impl Checker {
             Ok(temp) => temp,
             Err(err) => {
                 error!("Can't read temperature: {err}");
-
                 self.temp_device = None;
                 return;
             }

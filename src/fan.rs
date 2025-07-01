@@ -68,18 +68,16 @@ impl Fan {
 
     pub fn get_fan_device() -> Option<(String, String)> {
         fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
-            let path = entry.path();
-            if path.file_name()?.to_str()?.starts_with(DEVICE_NAME_COOLING) {
-                let content = fs::read_to_string(path.join("type")).ok()?;
+            let entry_path = entry.path();
+            if entry_path
+                .file_name()?
+                .to_str()?
+                .starts_with(DEVICE_NAME_COOLING)
+            {
+                let content = fs::read_to_string(entry_path.join("type")).ok()?;
                 if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    return Some((
-                        format!(
-                            "{}/{}",
-                            path.to_string_lossy().into_owned(),
-                            FILE_NAME_CUR_STATE
-                        ),
-                        path.to_string_lossy().into_owned(),
-                    ));
+                    let path = entry_path.to_string_lossy().into_owned();
+                    return Some((format!("{path}/{FILE_NAME_CUR_STATE}"), path));
                 }
             }
             None
