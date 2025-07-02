@@ -2,11 +2,13 @@ use std::{error::Error, fs};
 
 use log::info;
 
-use crate::{THERMAL_DIR, THERMAL_ZONE_NAME};
+use crate::THERMAL_DIR;
 
 pub struct Temp {
     pub path: String,
 }
+
+const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 impl Temp {
     pub fn new() -> Result<Self, Box<dyn Error>> {
