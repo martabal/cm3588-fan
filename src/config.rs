@@ -30,6 +30,12 @@ pub struct Threshold {
     pub min: f64,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Config {
     fn get_level_color<T: Into<Option<Level>>>(level: T) -> &'static str {
         match level.into() {
