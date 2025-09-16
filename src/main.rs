@@ -2,7 +2,7 @@ use std::{thread, time::Duration};
 
 use log::debug;
 
-use cm3588_fan::cheker::Checker;
+use cm3588_fan::checker::Checker;
 
 fn main() {
     let mut checker = Checker::new();
