@@ -18,6 +18,7 @@ impl Default for Checker {
 }
 
 impl Checker {
+    #[must_use]
     pub fn new() -> Self {
         let temp_device = match Temp::new() {
             Ok(temp) => Some(temp),
@@ -66,15 +67,12 @@ impl Checker {
         };
 
         if self.temp_device.is_none() {
-            match Temp::new() {
-                Ok(device) => {
-                    trace!("New temp device detected");
-                    self.temp_device = Some(device);
-                }
-                Err(_) => {
-                    error!("Still no temp device available");
-                    return;
-                }
+            if let Ok(device) = Temp::new() {
+                trace!("New temp device detected");
+                self.temp_device = Some(device);
+            } else {
+                error!("Still no temp device available");
+                return;
             }
         }
 

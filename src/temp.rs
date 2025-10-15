@@ -13,7 +13,7 @@ const THERMAL_ZONE_NAME: &str = "thermal_zone";
 impl Temp {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         return match Self::get_temp_path() {
-            Ok(path) => Ok(Temp { path }),
+            Ok(path) => Ok(Self { path }),
             Err(err) => Err(err),
         };
     }
@@ -31,8 +31,7 @@ impl Temp {
             if path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .map(|s| s.starts_with(THERMAL_ZONE_NAME))
-                .unwrap_or(false)
+                .is_some_and(|s| s.starts_with(THERMAL_ZONE_NAME))
             {
                 let temp_path = path.join("temp");
                 if let Ok(s) = fs::read_to_string(&temp_path)

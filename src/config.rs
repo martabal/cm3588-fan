@@ -54,7 +54,6 @@ impl Config {
             .as_str()
         {
             "trace" => LevelFilter::Trace,
-            "debug" => LevelFilter::Debug,
             "info" => LevelFilter::Info,
             "warn" => LevelFilter::Warn,
             "error" => LevelFilter::Error,
@@ -95,6 +94,7 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(fallback)
     }
+    #[must_use]
     pub fn new() -> Self {
         let debug = Self::get_env("DEBUG", false);
         Self::setup_logging(debug);
@@ -120,31 +120,31 @@ impl Config {
     }
 
     pub fn check_config(&self, fan_max_state: u32) {
-        if self.threshold.min >= self.threshold.max {
-            panic!(
-                "min threshold can't be >= max threshold: {} >= {}",
-                self.threshold.min, self.threshold.max
-            );
-        }
+        assert!(
+            self.threshold.min < self.threshold.max,
+            "min threshold can't be >= max threshold: {} >= {}",
+            self.threshold.min,
+            self.threshold.max
+        );
         if let Some(max) = self.state.max {
-            if self.state.min >= max {
-                panic!(
-                    "min state can't be >= max state: {} >= {max}",
-                    self.state.min
-                );
-            }
+            assert!(
+                (self.state.min < max),
+                "min state can't be >= max state: {} >= {max}",
+                self.state.min
+            );
 
-            if max > fan_max_state {
-                panic!("Configured max state {max} exceeds device max state {fan_max_state}");
-            }
-        }
-
-        if self.state.min > fan_max_state {
-            panic!(
-                "Configured min state {} exceeds device max state {}",
-                self.state.min, fan_max_state
+            assert!(
+                (max <= fan_max_state),
+                "Configured max state {max} exceeds device max state {fan_max_state}"
             );
         }
+
+        assert!(
+            (self.state.min <= fan_max_state),
+            "Configured min state {} exceeds device max state {}",
+            self.state.min,
+            fan_max_state
+        );
     }
 }
 
