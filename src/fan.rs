@@ -23,13 +23,14 @@ impl Fan {
         Ok(parsed)
     }
 
+    #[must_use]
     pub fn new_fan_device(state: String, path: String, config: &Config) -> Self {
         let max_state = Self::get_device_max_state(&path).unwrap();
 
         config.check_config(max_state);
 
-        let temp_slots = Self::get_temperature_slots(config, &path, &max_state);
-        Fan {
+        let temp_slots = Self::get_temperature_slots(config, &path, max_state);
+        Self {
             path,
             state,
             max_state,
@@ -44,7 +45,7 @@ impl Fan {
         let step = if num_slots <= 1 {
             0.0
         } else {
-            (config.threshold.max - config.threshold.min) / (num_slots - 1) as f64
+            (config.threshold.max - config.threshold.min) / f64::from(num_slots - 1)
         };
 
         trace!(
@@ -59,13 +60,14 @@ impl Fan {
                     if num_slots == 1 {
                         config.threshold.min
                     } else {
-                        config.threshold.min + i as f64 * step
+                        f64::from(i).mul_add(step, config.threshold.min)
                     },
                 )
             })
             .collect()
     }
 
+    #[must_use]
     pub fn get_fan_device() -> Option<(String, String)> {
         fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
             let entry_path = entry.path();
@@ -87,9 +89,9 @@ impl Fan {
     fn get_temperature_slots(
         config: &Config,
         fan_device: &String,
-        max_state: &u32,
+        max_state: u32,
     ) -> Box<[(u32, f64)]> {
-        let max_state = config.state.max.unwrap_or(*max_state);
+        let max_state = config.state.max.unwrap_or(max_state);
 
         trace!("max_state: {max_state}");
         if max_state == 0 {
@@ -102,19 +104,18 @@ impl Fan {
         slots
     }
 
+    #[must_use]
     pub fn new(config: &Config) -> Option<Self> {
-        match Self::get_fan_device() {
-            Some((state, path)) => {
-                info!("Fan device: {path}");
-                Some(Self::new_fan_device(state, path, config))
-            }
-            None => {
-                error!("No PWM fan device found");
-                None
-            }
+        if let Some((state, path)) = Self::get_fan_device() {
+            info!("Fan device: {path}");
+            Some(Self::new_fan_device(state, path, config))
+        } else {
+            error!("No PWM fan device found");
+            None
         }
     }
 
+    #[must_use]
     pub fn choose_speed(&self, current_temp: f64, config: &Config) -> u32 {
         match current_temp {
             t if t < config.threshold.min => {
@@ -127,8 +128,7 @@ impl Fan {
                     .iter()
                     .rev()
                     .find(|(_, temp)| *temp <= current_temp)
-                    .map(|(state, _)| *state)
-                    .unwrap_or(config.state.min)
+                    .map_or(config.state.min, |(state, _)| *state)
             }
             _ => {
                 trace!("Max state desired {}", self.max_state);
