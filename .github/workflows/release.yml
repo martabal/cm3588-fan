@@ -21,8 +21,8 @@ jobs:
       - name: Checkout repository
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
 
-      - name: Run make build
-        run: make build
+      - name: Run build
+        run: just build
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@aec2ec56f94eb8180ceec724245f64ef008b89f5 #v2.4.0
