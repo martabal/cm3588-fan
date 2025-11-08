@@ -9,9 +9,7 @@ fn main() {
 
     loop {
         checker.adjust_speed();
-
         debug!("Sleeping for {} seconds", checker.config.sleep_time);
-
         thread::sleep(Duration::from_secs(checker.config.sleep_time));
     }
 }
