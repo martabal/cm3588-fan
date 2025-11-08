@@ -22,12 +22,12 @@ jobs:
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
 
       - name: Run build
-        run: just build
+        run: make build
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090 #v2.4.1
         with:
-          files: build/*
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
