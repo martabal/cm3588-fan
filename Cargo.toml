@@ -10,7 +10,7 @@ repository = "https://github.com/martabal/cm3588-fan"
 
 [dependencies]
 env_logger = "0.11.8"
-log = "0.4.28"
+log = "0.4.29"
 
 [profile.release]
 opt-level = 3
