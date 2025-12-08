@@ -104,7 +104,7 @@ impl Checker {
             if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
                 fan.last_state = Some(desired_speed);
             } else {
-                error!("Can't set speed on device {}", fan.state);
+                error!("Can't set speed on device {}", fan.state.display());
                 self.fan_device = None;
             }
         } else {

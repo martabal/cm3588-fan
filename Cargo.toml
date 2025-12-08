@@ -9,8 +9,10 @@ homepage = "https://github.com/martabal/cm3588-fan"
 repository = "https://github.com/martabal/cm3588-fan"
 
 [dependencies]
-env_logger = "0.11.8"
-log = "0.4.28"
+env_logger = { version = "0.11.8", default-features = false, features = [
+  "humantime",
+] }
+log = { version = "0.4.29", default-features = false }
 
 [profile.release]
 opt-level = 3

@@ -1,35 +1,35 @@
-use std::{error::Error, fs};
-
-use log::{error, info, trace};
-
 use crate::{THERMAL_DIR, config::Config};
+use log::{error, info, trace};
+use std::{
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+};
 
 const FILE_NAME_CUR_STATE: &str = "cur_state";
 const DEVICE_NAME_COOLING: &str = "cooling_device";
 const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
 
 pub struct Fan {
-    pub path: String,
-    pub state: String,
+    pub path: PathBuf,
+    pub state: PathBuf,
     pub max_state: u32,
-    pub temp_slots: Box<[(u32, f64)]>,
+    pub temp_slots: Vec<(u32, f64)>,
     pub last_state: Option<u32>,
 }
 
 impl Fan {
-    fn get_device_max_state(device: &str) -> Result<u32, Box<dyn Error>> {
-        let content = fs::read_to_string(format!("{device}/max_state"))?;
-        let parsed = content.trim().parse::<u32>()?;
-        Ok(parsed)
+    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u32, Box<dyn Error>> {
+        let content = fs::read_to_string(device.as_ref().join("max_state"))?;
+        Ok(content.trim().parse::<u32>()?)
     }
 
     #[must_use]
-    pub fn new_fan_device(state: String, path: String, config: &Config) -> Self {
+    pub fn new_fan_device(state: PathBuf, path: PathBuf, config: &Config) -> Self {
         let max_state = Self::get_device_max_state(&path).unwrap();
-
         config.check_config(max_state);
 
-        let temp_slots = Self::get_temperature_slots(config, &path, max_state);
+        let temp_slots = Self::get_temperature_slots(config, max_state);
         Self {
             path,
             state,
@@ -39,7 +39,7 @@ impl Fan {
         }
     }
 
-    fn calculate_slots(config: &Config, max_state: u32) -> Box<[(u32, f64)]> {
+    fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
         let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
 
         let step = if num_slots <= 1 {
@@ -68,7 +68,7 @@ impl Fan {
     }
 
     #[must_use]
-    pub fn get_fan_device() -> Option<(String, String)> {
+    pub fn get_fan_device() -> Option<(PathBuf, PathBuf)> {
         fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
             let entry_path = entry.path();
             if entry_path
@@ -78,27 +78,20 @@ impl Fan {
             {
                 let content = fs::read_to_string(entry_path.join("type")).ok()?;
                 if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    let path = entry_path.to_string_lossy().into_owned();
-                    return Some((format!("{path}/{FILE_NAME_CUR_STATE}"), path));
+                    return Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path));
                 }
             }
             None
         })
     }
 
-    fn get_temperature_slots(
-        config: &Config,
-        fan_device: &String,
-        max_state: u32,
-    ) -> Box<[(u32, f64)]> {
+    fn get_temperature_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
         let max_state = config.state.max.unwrap_or(max_state);
-
         trace!("max_state: {max_state}");
         if max_state == 0 {
-            error!("max_state could not be determined for {fan_device}");
-            return Box::new([]);
+            error!("max_state could not be determined");
+            return vec![];
         }
-
         let slots = Self::calculate_slots(config, max_state);
         trace!("Slots: {slots:?}");
         slots
@@ -107,7 +100,7 @@ impl Fan {
     #[must_use]
     pub fn new(config: &Config) -> Option<Self> {
         if let Some((state, path)) = Self::get_fan_device() {
-            info!("Fan device: {path}");
+            info!("Fan device: {}", path.display());
             Some(Self::new_fan_device(state, path, config))
         } else {
             error!("No PWM fan device found");
@@ -301,14 +294,13 @@ mod tests {
             (3, 60.0),
             (4, 65.0),
             (5, 70.0),
-        ]
-        .into_boxed_slice();
+        ];
 
         Fan {
             temp_slots,
             max_state: 5,
-            path: "cooling_device".to_owned(),
-            state: "cooling_device/cur_state".to_owned(),
+            path: "cooling_device".into(),
+            state: "cooling_device/cur_state".into(),
             last_state: None,
         }
     }
@@ -373,10 +365,10 @@ mod tests {
         };
 
         let fan = Fan {
-            temp_slots: Vec::new().into_boxed_slice(),
+            temp_slots: Vec::new(),
             max_state: 5,
-            path: "cooling_device".to_string(),
-            state: "cooling_device/cur_state".to_owned(),
+            path: "cooling_device".into(),
+            state: "cooling_device/cur_state".into(),
             last_state: None,
         };
 

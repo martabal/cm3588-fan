@@ -1,21 +1,18 @@
-use std::{error::Error, fs};
-
 use log::info;
+use std::{error::Error, fs, path::PathBuf};
 
 use crate::THERMAL_DIR;
 
 pub struct Temp {
-    pub path: String,
+    pub path: PathBuf,
 }
 
 const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 impl Temp {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        return match Self::get_temp_path() {
-            Ok(path) => Ok(Self { path }),
-            Err(err) => Err(err),
-        };
+        let path = Self::get_temp_path()?;
+        Ok(Self { path })
     }
 
     pub fn get_current_temp(&self) -> Result<f64, Box<dyn Error>> {
@@ -23,7 +20,7 @@ impl Temp {
         Ok(temp)
     }
 
-    pub fn get_temp_path() -> Result<String, Box<dyn Error>> {
+    pub fn get_temp_path() -> Result<PathBuf, Box<dyn Error>> {
         for entry in fs::read_dir(THERMAL_DIR)? {
             let entry = entry?;
             let path = entry.path();
@@ -34,16 +31,16 @@ impl Temp {
                 .is_some_and(|s| s.starts_with(THERMAL_ZONE_NAME))
             {
                 let temp_path = path.join("temp");
-                if let Ok(s) = fs::read_to_string(&temp_path)
-                    && s.trim().parse::<f64>().is_ok()
+
+                if let Ok(content) = fs::read_to_string(&temp_path)
+                    && content.trim().parse::<f64>().is_ok()
                 {
-                    let path: String = temp_path.to_string_lossy().into_owned();
-                    info!("Temp path: {path}");
-                    return Ok(path);
+                    info!("Temp path: {}", temp_path.display());
+                    return Ok(temp_path);
                 }
             }
         }
 
-        Err(Box::from("No valid thermal zone found"))
+        Err("No valid thermal zone found".into())
     }
 }
