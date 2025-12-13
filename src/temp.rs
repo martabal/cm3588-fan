@@ -50,93 +50,87 @@ mod tests {
     use super::*;
     use std::fs;
 
+    struct TempTestDir {
+        path: PathBuf,
+    }
+
+    impl TempTestDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(name);
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn create_temp_file(&self, content: &str) -> PathBuf {
+            let temp_file = self.path.join("temp");
+            fs::write(&temp_file, content).unwrap();
+            temp_file
+        }
+    }
+
+    impl Drop for TempTestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
     #[test]
     fn test_get_current_temp_valid_value() {
-        let temp_dir = std::env::temp_dir().join("test_temp_valid");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "45000\n").unwrap();
+        let test_dir = TempTestDir::new("test_temp_valid");
+        let temp_file = test_dir.create_temp_file("45000\n");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 45.0);
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_get_current_temp_with_whitespace() {
-        let temp_dir = std::env::temp_dir().join("test_temp_whitespace");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "  50000  \n").unwrap();
+        let test_dir = TempTestDir::new("test_temp_whitespace");
+        let temp_file = test_dir.create_temp_file("  50000  \n");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 50.0);
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_get_current_temp_zero_value() {
-        let temp_dir = std::env::temp_dir().join("test_temp_zero");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "0").unwrap();
+        let test_dir = TempTestDir::new("test_temp_zero");
+        let temp_file = test_dir.create_temp_file("0");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0.0);
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_get_current_temp_high_value() {
-        let temp_dir = std::env::temp_dir().join("test_temp_high");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "100000").unwrap();
+        let test_dir = TempTestDir::new("test_temp_high");
+        let temp_file = test_dir.create_temp_file("100000");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100.0);
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_get_current_temp_invalid_content() {
-        let temp_dir = std::env::temp_dir().join("test_temp_invalid");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "not_a_number").unwrap();
+        let test_dir = TempTestDir::new("test_temp_invalid");
+        let temp_file = test_dir.create_temp_file("not_a_number");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_err());
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
@@ -151,44 +145,24 @@ mod tests {
 
     #[test]
     fn test_get_current_temp_empty_file() {
-        let temp_dir = std::env::temp_dir().join("test_temp_empty");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "").unwrap();
+        let test_dir = TempTestDir::new("test_temp_empty");
+        let temp_file = test_dir.create_temp_file("");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_err());
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_get_current_temp_negative_value() {
-        let temp_dir = std::env::temp_dir().join("test_temp_negative");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "-5000").unwrap();
+        let test_dir = TempTestDir::new("test_temp_negative");
+        let temp_file = test_dir.create_temp_file("-5000");
 
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp = Temp { path: temp_file };
 
         let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), -5.0);
-
-        fs::remove_dir_all(&temp_dir).ok();
-    }
-
-    #[test]
-    fn test_get_temp_path_no_thermal_dir() {
-        let result = Temp::get_temp_path();
-        // This will fail in test environment without actual thermal zones
-        // but we're testing that it returns an error rather than panicking
-        assert!(result.is_err() || result.is_ok());
     }
 }
