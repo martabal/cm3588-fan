@@ -21,26 +21,24 @@ impl Temp {
     }
 
     pub fn get_temp_path() -> Result<PathBuf, Box<dyn Error>> {
-        for entry in fs::read_dir(THERMAL_DIR)? {
-            let entry = entry?;
-            let path = entry.path();
+        fs::read_dir(THERMAL_DIR)?
+            .find_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                let file_name = path.file_name()?.to_str()?;
 
-            if path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .is_some_and(|s| s.starts_with(THERMAL_ZONE_NAME))
-            {
-                let temp_path = path.join("temp");
-
-                if let Ok(content) = fs::read_to_string(&temp_path)
-                    && content.trim().parse::<f64>().is_ok()
-                {
-                    info!("Temp path: {}", temp_path.display());
-                    return Ok(temp_path);
+                if file_name.starts_with(THERMAL_ZONE_NAME) {
+                    let temp_path = path.join("temp");
+                    
+                    if let Ok(content) = fs::read_to_string(&temp_path)
+                        && content.trim().parse::<f64>().is_ok()
+                    {
+                        info!("Temp path: {}", temp_path.display());
+                        return Some(temp_path);
+                    }
                 }
-            }
-        }
-
-        Err("No valid thermal zone found".into())
+                None
+            })
+            .ok_or_else(|| "No valid thermal zone found".into())
     }
 }

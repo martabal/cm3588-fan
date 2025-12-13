@@ -69,14 +69,14 @@ impl Fan {
 
     #[must_use]
     pub fn get_fan_device() -> Option<(PathBuf, PathBuf)> {
-        fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
+        fs::read_dir(THERMAL_DIR).ok()?.find_map(|entry| {
+            let entry = entry.ok()?;
             let entry_path = entry.path();
-            if entry_path
-                .file_name()?
-                .to_str()?
-                .starts_with(DEVICE_NAME_COOLING)
-            {
-                let content = fs::read_to_string(entry_path.join("type")).ok()?;
+            let file_name = entry_path.file_name()?.to_str()?;
+            
+            if file_name.starts_with(DEVICE_NAME_COOLING) {
+                let type_path = entry_path.join("type");
+                let content = fs::read_to_string(type_path).ok()?;
                 if content.trim() == DEVICE_TYPE_PWM_FAN {
                     return Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path));
                 }
@@ -143,24 +143,25 @@ mod tests {
         let max_state = Some(4);
         let min_state = 0;
 
-        let mut panic_occurred = false;
-
-        if let Some(max) = max_state
+        let panic_occurred = if let Some(max) = max_state
             && min_state >= max
         {
-            panic_occurred = true;
-        }
+            true
+        } else {
+            false
+        };
 
         assert!(!panic_occurred);
         let max_state = Some(2);
         let min_state = 3;
 
-        let mut panic_occurred = false;
-        if let Some(max) = max_state
+        let panic_occurred = if let Some(max) = max_state
             && min_state >= max
         {
-            panic_occurred = true;
-        }
+            true
+        } else {
+            false
+        };
 
         assert!(panic_occurred);
     }
@@ -190,8 +191,8 @@ mod tests {
 
         let step = (max_threshold - min_threshold) / 4.0;
         assert_eq!(slots[1], (2, min_threshold + step));
-        assert_eq!(slots[2], (3, min_threshold + 2.0 * step));
-        assert_eq!(slots[3], (4, min_threshold + 3.0 * step));
+        assert_eq!(slots[2], (3, 2.0f64.mul_add(step, min_threshold)));
+        assert_eq!(slots[3], (4, 3.0f64.mul_add(step, min_threshold)));
     }
 
     #[test]
@@ -261,13 +262,11 @@ mod tests {
 
         let slots = Fan::calculate_slots(&fan, max_state);
 
-        let fallback = (fan.state.min, fan.threshold.min);
-        let desired_slot = slots
+        let desired_state = slots
             .iter()
-            .filter(|(_, temp)| *temp <= current_temp)
-            .next_back()
-            .unwrap_or(&fallback);
-        let desired_state = desired_slot.0;
+            .rev()
+            .find(|(_, temp)| *temp <= current_temp)
+            .map_or(fan.state.min, |(state, _)| *state);
 
         assert_eq!(desired_state, 3);
     }
