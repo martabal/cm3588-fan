@@ -152,13 +152,7 @@ mod tests {
                 path: self.path.clone(),
                 state: state_file,
                 max_state: 5,
-                temp_slots: vec![
-                    (1, 45.0),
-                    (2, 50.0),
-                    (3, 55.0),
-                    (4, 60.0),
-                    (5, 65.0),
-                ],
+                temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0), (4, 60.0), (5, 65.0)],
                 last_state,
             }
         }
