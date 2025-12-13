@@ -292,4 +292,126 @@ mod tests {
 
         config.check_config(5);
     }
+
+    #[test]
+    fn test_threshold_min_equals_max_panics() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 50.0,
+                min: 50.0,
+            },
+            state: State {
+                max: Some(5),
+                min: 0,
+            },
+            sleep_time: 5,
+        };
+
+        assert_panics(|| config.check_config(5), "min threshold can't be >=");
+    }
+
+    #[test]
+    fn test_min_state_equals_device_max_state() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 60.0,
+                min: 40.0,
+            },
+            state: State {
+                max: None,
+                min: 5,
+            },
+            sleep_time: 5,
+        };
+
+        config.check_config(5);
+    }
+
+    #[test]
+    fn test_max_state_equals_device_max_state() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 60.0,
+                min: 40.0,
+            },
+            state: State {
+                max: Some(5),
+                min: 0,
+            },
+            sleep_time: 5,
+        };
+
+        config.check_config(5);
+    }
+
+    #[test]
+    fn test_min_state_zero_with_max_state() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 60.0,
+                min: 40.0,
+            },
+            state: State {
+                max: Some(5),
+                min: 0,
+            },
+            sleep_time: 5,
+        };
+
+        config.check_config(5);
+    }
+
+    #[test]
+    fn test_very_large_thresholds() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 150.0,
+                min: 100.0,
+            },
+            state: State {
+                max: Some(5),
+                min: 0,
+            },
+            sleep_time: 5,
+        };
+
+        config.check_config(5);
+    }
+
+    #[test]
+    fn test_min_state_one_below_max_state() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 60.0,
+                min: 40.0,
+            },
+            state: State {
+                max: Some(2),
+                min: 1,
+            },
+            sleep_time: 5,
+        };
+
+        config.check_config(5);
+    }
+
+    #[test]
+    fn test_device_max_state_zero_panics() {
+        let config: Config = Config {
+            threshold: Threshold {
+                max: 60.0,
+                min: 40.0,
+            },
+            state: State {
+                max: None,
+                min: 1,
+            },
+            sleep_time: 5,
+        };
+
+        assert_panics(
+            || config.check_config(0),
+            "Configured min state 1 exceeds device max state 0",
+        );
+    }
 }

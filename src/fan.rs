@@ -370,4 +370,159 @@ mod tests {
         let result = fan.choose_speed(80.0, &config);
         assert_eq!(result, config.state.min);
     }
+
+    #[test]
+    fn test_temp_exactly_at_slot_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(60.0, &config);
+        assert_eq!(result, 3);
+    }
+
+    #[test]
+    fn test_temp_slightly_above_slot_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(60.1, &config);
+        assert_eq!(result, 3);
+    }
+
+    #[test]
+    fn test_temp_slightly_below_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(44.9, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_temp_just_above_min_threshold() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(45.1, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_calculate_slots_with_two_slots() {
+        let config = Config {
+            threshold: Threshold {
+                min: 40.0,
+                max: 60.0,
+            },
+            state: State {
+                max: Some(2),
+                min: 0,
+            },
+            sleep_time: 5,
+        };
+
+        let slots = Fan::calculate_slots(&config, 5);
+
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0], (1, 40.0));
+        assert_eq!(slots[1], (2, 60.0));
+    }
+
+    #[test]
+    fn test_calculate_slots_with_min_state_non_zero() {
+        let config = Config {
+            threshold: Threshold {
+                min: 50.0,
+                max: 70.0,
+            },
+            state: State {
+                max: Some(5),
+                min: 2,
+            },
+            sleep_time: 5,
+        };
+
+        let slots = Fan::calculate_slots(&config, 5);
+
+        assert_eq!(slots.len(), 3);
+        assert_eq!(slots[0].0, 3);
+        assert_eq!(slots[1].0, 4);
+        assert_eq!(slots[2].0, 5);
+    }
+
+    #[test]
+    fn test_choose_speed_no_max_state_config() {
+        let config = Config {
+            threshold: Threshold {
+                min: 45.0,
+                max: 70.0,
+            },
+            state: State {
+                min: 0,
+                max: None,
+            },
+            sleep_time: 5,
+        };
+
+        let fan = Fan {
+            temp_slots: vec![(1, 50.0), (2, 55.0), (3, 60.0), (4, 65.0), (5, 70.0)],
+            max_state: 5,
+            path: "cooling_device".into(),
+            state: "cooling_device/cur_state".into(),
+            last_state: None,
+        };
+
+        let result = fan.choose_speed(80.0, &config);
+        assert_eq!(result, 5);
+    }
+
+    #[test]
+    fn test_choose_speed_with_very_low_temp() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(0.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_choose_speed_with_negative_temp() {
+        let config = setup_test_config();
+        let fan = setup_test_fan();
+
+        let result = fan.choose_speed(-10.0, &config);
+        assert_eq!(result, config.state.min);
+    }
+
+    #[test]
+    fn test_choose_speed_boundary_between_slots() {
+        let config = Config {
+            threshold: Threshold {
+                min: 40.0,
+                max: 60.0,
+            },
+            state: State {
+                min: 0,
+                max: Some(3),
+            },
+            sleep_time: 5,
+        };
+
+        let fan = Fan {
+            temp_slots: vec![(1, 40.0), (2, 50.0), (3, 60.0)],
+            max_state: 5,
+            path: "cooling_device".into(),
+            state: "cooling_device/cur_state".into(),
+            last_state: None,
+        };
+
+        let result = fan.choose_speed(49.99, &config);
+        assert_eq!(result, 1);
+
+        let result = fan.choose_speed(50.0, &config);
+        assert_eq!(result, 2);
+
+        let result = fan.choose_speed(50.01, &config);
+        assert_eq!(result, 2);
+    }
 }

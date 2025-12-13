@@ -112,3 +112,281 @@ impl Checker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{State, Threshold};
+
+    #[test]
+    fn test_checker_structure() {
+        let checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: None,
+            temp_device: None,
+        };
+        assert!(!checker.is_init);
+        assert!(checker.fan_device.is_none());
+        assert!(checker.temp_device.is_none());
+    }
+
+    #[test]
+    fn test_adjust_speed_without_fan_device() {
+        let mut checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: None,
+            temp_device: None,
+        };
+
+        checker.adjust_speed();
+    }
+
+    #[test]
+    fn test_checker_with_mock_fan() {
+        let temp_dir = std::env::temp_dir().join("test_checker_mock");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, "2").unwrap();
+
+        let temp_file = temp_dir.join("temp");
+        fs::write(&temp_file, "55000").unwrap();
+
+        let fan = Fan {
+            path: temp_dir.clone(),
+            state: state_file.clone(),
+            max_state: 5,
+            temp_slots: vec![
+                (1, 45.0),
+                (2, 50.0),
+                (3, 55.0),
+                (4, 60.0),
+                (5, 65.0),
+            ],
+            last_state: None,
+        };
+
+        let temp = Temp {
+            path: temp_file.clone(),
+        };
+
+        let mut checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+        assert!(checker.is_init);
+
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_adjust_speed_with_same_desired_speed() {
+        let temp_dir = std::env::temp_dir().join("test_checker_same_speed");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, "3").unwrap();
+
+        let temp_file = temp_dir.join("temp");
+        fs::write(&temp_file, "55000").unwrap();
+
+        let fan = Fan {
+            path: temp_dir.clone(),
+            state: state_file.clone(),
+            max_state: 5,
+            temp_slots: vec![
+                (1, 45.0),
+                (2, 50.0),
+                (3, 55.0),
+                (4, 60.0),
+                (5, 65.0),
+            ],
+            last_state: Some(3),
+        };
+
+        let temp = Temp {
+            path: temp_file.clone(),
+        };
+
+        let mut checker = Checker {
+            is_init: true,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_adjust_speed_with_invalid_temp_file() {
+        let temp_dir = std::env::temp_dir().join("test_checker_invalid_temp");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, "2").unwrap();
+
+        let temp_file = temp_dir.join("temp");
+        fs::write(&temp_file, "invalid").unwrap();
+
+        let fan = Fan {
+            path: temp_dir.clone(),
+            state: state_file.clone(),
+            max_state: 5,
+            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
+            last_state: None,
+        };
+
+        let temp = Temp {
+            path: temp_file.clone(),
+        };
+
+        let mut checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+        assert!(checker.temp_device.is_none());
+
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_adjust_speed_with_invalid_speed_file() {
+        let temp_dir = std::env::temp_dir().join("test_checker_invalid_speed");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, "invalid_speed").unwrap();
+
+        let temp_file = temp_dir.join("temp");
+        fs::write(&temp_file, "50000").unwrap();
+
+        let fan = Fan {
+            path: temp_dir.clone(),
+            state: state_file.clone(),
+            max_state: 5,
+            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
+            last_state: None,
+        };
+
+        let temp = Temp {
+            path: temp_file.clone(),
+        };
+
+        let mut checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_adjust_speed_without_temp_device() {
+        let temp_dir = std::env::temp_dir().join("test_checker_no_temp");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, "2").unwrap();
+
+        let fan = Fan {
+            path: temp_dir.clone(),
+            state: state_file.clone(),
+            max_state: 5,
+            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
+            last_state: None,
+        };
+
+        let mut checker = Checker {
+            is_init: false,
+            config: Config {
+                threshold: Threshold {
+                    min: 45.0,
+                    max: 70.0,
+                },
+                state: State {
+                    min: 0,
+                    max: Some(5),
+                },
+                sleep_time: 5,
+            },
+            fan_device: Some(fan),
+            temp_device: None,
+        };
+
+        checker.adjust_speed();
+
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+}
