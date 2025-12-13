@@ -143,25 +143,14 @@ mod tests {
         let max_state = Some(4);
         let min_state = 0;
 
-        let panic_occurred = if let Some(max) = max_state
-            && min_state >= max
-        {
-            true
-        } else {
-            false
-        };
+        let panic_occurred = max_state.is_some_and(|max| min_state >= max);
 
         assert!(!panic_occurred);
+        
         let max_state = Some(2);
         let min_state = 3;
 
-        let panic_occurred = if let Some(max) = max_state
-            && min_state >= max
-        {
-            true
-        } else {
-            false
-        };
+        let panic_occurred = max_state.is_some_and(|max| min_state >= max);
 
         assert!(panic_occurred);
     }
@@ -246,7 +235,7 @@ mod tests {
     fn test_adjust_speed() {
         let max_state = 5;
 
-        let fan = Config {
+        let config = Config {
             sleep_time: 5,
             threshold: Threshold {
                 max: 80.0,
@@ -259,14 +248,17 @@ mod tests {
         };
 
         let current_temp = 60.0;
+        let slots = Fan::calculate_slots(&config, max_state);
+        
+        let fan = Fan {
+            temp_slots: slots,
+            max_state,
+            path: "cooling_device".into(),
+            state: "cooling_device/cur_state".into(),
+            last_state: None,
+        };
 
-        let slots = Fan::calculate_slots(&fan, max_state);
-
-        let desired_state = slots
-            .iter()
-            .rev()
-            .find(|(_, temp)| *temp <= current_temp)
-            .map_or(fan.state.min, |(state, _)| *state);
+        let desired_state = fan.choose_speed(current_temp, &config);
 
         assert_eq!(desired_state, 3);
     }
