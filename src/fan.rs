@@ -73,7 +73,7 @@ impl Fan {
             let entry = entry.ok()?;
             let entry_path = entry.path();
             let file_name = entry_path.file_name()?.to_str()?;
-            
+
             if file_name.starts_with(DEVICE_NAME_COOLING) {
                 let type_path = entry_path.join("type");
                 let content = fs::read_to_string(type_path).ok()?;
@@ -146,7 +146,7 @@ mod tests {
         let panic_occurred = max_state.is_some_and(|max| min_state >= max);
 
         assert!(!panic_occurred);
-        
+
         let max_state = Some(2);
         let min_state = 3;
 
@@ -249,7 +249,7 @@ mod tests {
 
         let current_temp = 60.0;
         let slots = Fan::calculate_slots(&config, max_state);
-        
+
         let fan = Fan {
             temp_slots: slots,
             max_state,

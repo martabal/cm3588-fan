@@ -29,7 +29,7 @@ impl Temp {
 
                 if file_name.starts_with(THERMAL_ZONE_NAME) {
                     let temp_path = path.join("temp");
-                    
+
                     if let Ok(content) = fs::read_to_string(&temp_path)
                         && content.trim().parse::<f64>().is_ok()
                     {

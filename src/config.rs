@@ -208,9 +208,8 @@ mod tests {
             },
             sleep_time: 5,
         };
-        let msg_contains = format!(
-            "Configured min state {min_state} exceeds device max state {max_state}"
-        );
+        let msg_contains =
+            format!("Configured min state {min_state} exceeds device max state {max_state}");
         assert_panics(|| config.check_config(5), &msg_contains);
     }
 

@@ -87,7 +87,7 @@ impl Checker {
             debug!("Setting the speed for the first time!");
             self.is_init = true;
         }
-        
+
         info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
         if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
             fan.last_state = Some(desired_speed);
