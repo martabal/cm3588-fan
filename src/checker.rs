@@ -133,36 +133,48 @@ mod tests {
         }
     }
 
-    fn create_test_temp_dir(name: &str) -> PathBuf {
-        let temp_dir = std::env::temp_dir().join(name);
-        fs::create_dir_all(&temp_dir).unwrap();
-        temp_dir
+    struct TestEnv {
+        path: PathBuf,
     }
 
-    fn create_test_fan(temp_dir: &PathBuf, state_content: &str, last_state: Option<u32>) -> Fan {
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, state_content).unwrap();
+    impl TestEnv {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(name);
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
 
-        Fan {
-            path: temp_dir.clone(),
-            state: state_file,
-            max_state: 5,
-            temp_slots: vec![
-                (1, 45.0),
-                (2, 50.0),
-                (3, 55.0),
-                (4, 60.0),
-                (5, 65.0),
-            ],
-            last_state,
+        fn create_fan(&self, state_content: &str, last_state: Option<u32>) -> Fan {
+            let state_file = self.path.join("cur_state");
+            fs::write(&state_file, state_content).unwrap();
+
+            Fan {
+                path: self.path.clone(),
+                state: state_file,
+                max_state: 5,
+                temp_slots: vec![
+                    (1, 45.0),
+                    (2, 50.0),
+                    (3, 55.0),
+                    (4, 60.0),
+                    (5, 65.0),
+                ],
+                last_state,
+            }
+        }
+
+        fn create_temp(&self, content: &str) -> Temp {
+            let temp_file = self.path.join("temp");
+            fs::write(&temp_file, content).unwrap();
+
+            Temp { path: temp_file }
         }
     }
 
-    fn create_test_temp(temp_dir: &PathBuf, content: &str) -> Temp {
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, content).unwrap();
-
-        Temp { path: temp_file }
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 
     #[test]
@@ -192,9 +204,9 @@ mod tests {
 
     #[test]
     fn test_checker_with_mock_fan() {
-        let temp_dir = create_test_temp_dir("test_checker_mock");
-        let fan = create_test_fan(&temp_dir, "2", None);
-        let temp = create_test_temp(&temp_dir, "55000");
+        let env = TestEnv::new("test_checker_mock");
+        let fan = env.create_fan("2", None);
+        let temp = env.create_temp("55000");
 
         let mut checker = Checker {
             is_init: false,
@@ -205,15 +217,13 @@ mod tests {
 
         checker.adjust_speed();
         assert!(checker.is_init);
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_adjust_speed_with_same_desired_speed() {
-        let temp_dir = create_test_temp_dir("test_checker_same_speed");
-        let fan = create_test_fan(&temp_dir, "3", Some(3));
-        let temp = create_test_temp(&temp_dir, "55000");
+        let env = TestEnv::new("test_checker_same_speed");
+        let fan = env.create_fan("3", Some(3));
+        let temp = env.create_temp("55000");
 
         let mut checker = Checker {
             is_init: true,
@@ -223,15 +233,13 @@ mod tests {
         };
 
         checker.adjust_speed();
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_adjust_speed_with_invalid_temp_file() {
-        let temp_dir = create_test_temp_dir("test_checker_invalid_temp");
-        let fan = create_test_fan(&temp_dir, "2", None);
-        let temp = create_test_temp(&temp_dir, "invalid");
+        let env = TestEnv::new("test_checker_invalid_temp");
+        let fan = env.create_fan("2", None);
+        let temp = env.create_temp("invalid");
 
         let mut checker = Checker {
             is_init: false,
@@ -242,15 +250,13 @@ mod tests {
 
         checker.adjust_speed();
         assert!(checker.temp_device.is_none());
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_adjust_speed_with_invalid_speed_file() {
-        let temp_dir = create_test_temp_dir("test_checker_invalid_speed");
-        let fan = create_test_fan(&temp_dir, "invalid_speed", None);
-        let temp = create_test_temp(&temp_dir, "50000");
+        let env = TestEnv::new("test_checker_invalid_speed");
+        let fan = env.create_fan("invalid_speed", None);
+        let temp = env.create_temp("50000");
 
         let mut checker = Checker {
             is_init: false,
@@ -260,14 +266,12 @@ mod tests {
         };
 
         checker.adjust_speed();
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_adjust_speed_without_temp_device() {
-        let temp_dir = create_test_temp_dir("test_checker_no_temp");
-        let fan = create_test_fan(&temp_dir, "2", None);
+        let env = TestEnv::new("test_checker_no_temp");
+        let fan = env.create_fan("2", None);
 
         let mut checker = Checker {
             is_init: false,
@@ -277,7 +281,5 @@ mod tests {
         };
 
         checker.adjust_speed();
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 }

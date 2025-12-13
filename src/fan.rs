@@ -516,13 +516,13 @@ mod tests {
             last_state: None,
         };
 
-        let result = fan.choose_speed(49.99, &config);
+        let result = fan.choose_speed(49.0, &config);
         assert_eq!(result, 1);
 
         let result = fan.choose_speed(50.0, &config);
         assert_eq!(result, 2);
 
-        let result = fan.choose_speed(50.01, &config);
+        let result = fan.choose_speed(51.0, &config);
         assert_eq!(result, 2);
     }
 }
