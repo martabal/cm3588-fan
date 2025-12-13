@@ -117,22 +117,59 @@ impl Checker {
 mod tests {
     use super::*;
     use crate::config::{State, Threshold};
+    use std::path::PathBuf;
+
+    fn create_test_config() -> Config {
+        Config {
+            threshold: Threshold {
+                min: 45.0,
+                max: 70.0,
+            },
+            state: State {
+                min: 0,
+                max: Some(5),
+            },
+            sleep_time: 5,
+        }
+    }
+
+    fn create_test_temp_dir(name: &str) -> PathBuf {
+        let temp_dir = std::env::temp_dir().join(name);
+        fs::create_dir_all(&temp_dir).unwrap();
+        temp_dir
+    }
+
+    fn create_test_fan(temp_dir: &PathBuf, state_content: &str, last_state: Option<u32>) -> Fan {
+        let state_file = temp_dir.join("cur_state");
+        fs::write(&state_file, state_content).unwrap();
+
+        Fan {
+            path: temp_dir.clone(),
+            state: state_file,
+            max_state: 5,
+            temp_slots: vec![
+                (1, 45.0),
+                (2, 50.0),
+                (3, 55.0),
+                (4, 60.0),
+                (5, 65.0),
+            ],
+            last_state,
+        }
+    }
+
+    fn create_test_temp(temp_dir: &PathBuf, content: &str) -> Temp {
+        let temp_file = temp_dir.join("temp");
+        fs::write(&temp_file, content).unwrap();
+
+        Temp { path: temp_file }
+    }
 
     #[test]
     fn test_checker_structure() {
         let checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: None,
             temp_device: None,
         };
@@ -145,17 +182,7 @@ mod tests {
     fn test_adjust_speed_without_fan_device() {
         let mut checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: None,
             temp_device: None,
         };
@@ -165,45 +192,13 @@ mod tests {
 
     #[test]
     fn test_checker_with_mock_fan() {
-        let temp_dir = std::env::temp_dir().join("test_checker_mock");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, "2").unwrap();
-
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "55000").unwrap();
-
-        let fan = Fan {
-            path: temp_dir.clone(),
-            state: state_file.clone(),
-            max_state: 5,
-            temp_slots: vec![
-                (1, 45.0),
-                (2, 50.0),
-                (3, 55.0),
-                (4, 60.0),
-                (5, 65.0),
-            ],
-            last_state: None,
-        };
-
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp_dir = create_test_temp_dir("test_checker_mock");
+        let fan = create_test_fan(&temp_dir, "2", None);
+        let temp = create_test_temp(&temp_dir, "55000");
 
         let mut checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
         };
@@ -216,45 +211,13 @@ mod tests {
 
     #[test]
     fn test_adjust_speed_with_same_desired_speed() {
-        let temp_dir = std::env::temp_dir().join("test_checker_same_speed");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, "3").unwrap();
-
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "55000").unwrap();
-
-        let fan = Fan {
-            path: temp_dir.clone(),
-            state: state_file.clone(),
-            max_state: 5,
-            temp_slots: vec![
-                (1, 45.0),
-                (2, 50.0),
-                (3, 55.0),
-                (4, 60.0),
-                (5, 65.0),
-            ],
-            last_state: Some(3),
-        };
-
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp_dir = create_test_temp_dir("test_checker_same_speed");
+        let fan = create_test_fan(&temp_dir, "3", Some(3));
+        let temp = create_test_temp(&temp_dir, "55000");
 
         let mut checker = Checker {
             is_init: true,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
         };
@@ -266,39 +229,13 @@ mod tests {
 
     #[test]
     fn test_adjust_speed_with_invalid_temp_file() {
-        let temp_dir = std::env::temp_dir().join("test_checker_invalid_temp");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, "2").unwrap();
-
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "invalid").unwrap();
-
-        let fan = Fan {
-            path: temp_dir.clone(),
-            state: state_file.clone(),
-            max_state: 5,
-            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
-            last_state: None,
-        };
-
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp_dir = create_test_temp_dir("test_checker_invalid_temp");
+        let fan = create_test_fan(&temp_dir, "2", None);
+        let temp = create_test_temp(&temp_dir, "invalid");
 
         let mut checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
         };
@@ -311,39 +248,13 @@ mod tests {
 
     #[test]
     fn test_adjust_speed_with_invalid_speed_file() {
-        let temp_dir = std::env::temp_dir().join("test_checker_invalid_speed");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, "invalid_speed").unwrap();
-
-        let temp_file = temp_dir.join("temp");
-        fs::write(&temp_file, "50000").unwrap();
-
-        let fan = Fan {
-            path: temp_dir.clone(),
-            state: state_file.clone(),
-            max_state: 5,
-            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
-            last_state: None,
-        };
-
-        let temp = Temp {
-            path: temp_file.clone(),
-        };
+        let temp_dir = create_test_temp_dir("test_checker_invalid_speed");
+        let fan = create_test_fan(&temp_dir, "invalid_speed", None);
+        let temp = create_test_temp(&temp_dir, "50000");
 
         let mut checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
         };
@@ -355,32 +266,12 @@ mod tests {
 
     #[test]
     fn test_adjust_speed_without_temp_device() {
-        let temp_dir = std::env::temp_dir().join("test_checker_no_temp");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let state_file = temp_dir.join("cur_state");
-        fs::write(&state_file, "2").unwrap();
-
-        let fan = Fan {
-            path: temp_dir.clone(),
-            state: state_file.clone(),
-            max_state: 5,
-            temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0)],
-            last_state: None,
-        };
+        let temp_dir = create_test_temp_dir("test_checker_no_temp");
+        let fan = create_test_fan(&temp_dir, "2", None);
 
         let mut checker = Checker {
             is_init: false,
-            config: Config {
-                threshold: Threshold {
-                    min: 45.0,
-                    max: 70.0,
-                },
-                state: State {
-                    min: 0,
-                    max: Some(5),
-                },
-                sleep_time: 5,
-            },
+            config: create_test_config(),
             fan_device: Some(fan),
             temp_device: None,
         };
