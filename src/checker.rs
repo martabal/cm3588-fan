@@ -75,6 +75,8 @@ impl Checker {
         let desired_speed = fan.choose_speed(current_temp, &self.config);
         debug!("Desired speed {desired_speed}");
 
+        // Optimization: trust our cached state to avoid filesystem read.
+        // If external processes change fan speed, it will be corrected on next temp change.
         if fan.last_state == Some(desired_speed) {
             debug!("State unchanged");
             return;
