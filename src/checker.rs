@@ -112,3 +112,168 @@ impl Checker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{State, Threshold};
+    use std::path::PathBuf;
+
+    fn create_test_config() -> Config {
+        Config {
+            threshold: Threshold {
+                min: 45.0,
+                max: 70.0,
+            },
+            state: State {
+                min: 0,
+                max: Some(5),
+            },
+            sleep_time: 5,
+        }
+    }
+
+    struct TestEnv {
+        path: PathBuf,
+    }
+
+    impl TestEnv {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(name);
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn create_fan(&self, state_content: &str, last_state: Option<u32>) -> Fan {
+            let state_file = self.path.join("cur_state");
+            fs::write(&state_file, state_content).unwrap();
+
+            Fan {
+                path: self.path.clone(),
+                state: state_file,
+                max_state: 5,
+                temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0), (4, 60.0), (5, 65.0)],
+                last_state,
+            }
+        }
+
+        fn create_temp(&self, content: &str) -> Temp {
+            let temp_file = self.path.join("temp");
+            fs::write(&temp_file, content).unwrap();
+
+            Temp { path: temp_file }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn test_checker_structure() {
+        let checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: None,
+            temp_device: None,
+        };
+        assert!(!checker.is_init);
+        assert!(checker.fan_device.is_none());
+        assert!(checker.temp_device.is_none());
+    }
+
+    #[test]
+    fn test_adjust_speed_without_fan_device() {
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: None,
+            temp_device: None,
+        };
+
+        checker.adjust_speed();
+    }
+
+    #[test]
+    fn test_checker_with_mock_fan() {
+        let env = TestEnv::new("test_checker_mock");
+        let fan = env.create_fan("2", None);
+        let temp = env.create_temp("55000");
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+        assert!(checker.is_init);
+    }
+
+    #[test]
+    fn test_adjust_speed_with_same_desired_speed() {
+        let env = TestEnv::new("test_checker_same_speed");
+        let fan = env.create_fan("3", Some(3));
+        let temp = env.create_temp("55000");
+
+        let mut checker = Checker {
+            is_init: true,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+    }
+
+    #[test]
+    fn test_adjust_speed_with_invalid_temp_file() {
+        let env = TestEnv::new("test_checker_invalid_temp");
+        let fan = env.create_fan("2", None);
+        let temp = env.create_temp("invalid");
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+        assert!(checker.temp_device.is_none());
+    }
+
+    #[test]
+    fn test_adjust_speed_with_invalid_speed_file() {
+        let env = TestEnv::new("test_checker_invalid_speed");
+        let fan = env.create_fan("invalid_speed", None);
+        let temp = env.create_temp("50000");
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+        };
+
+        checker.adjust_speed();
+    }
+
+    #[test]
+    fn test_adjust_speed_without_temp_device() {
+        let env = TestEnv::new("test_checker_no_temp");
+        let fan = env.create_fan("2", None);
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: None,
+        };
+
+        checker.adjust_speed();
+    }
+}
