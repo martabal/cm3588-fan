@@ -80,45 +80,18 @@ impl Checker {
             return;
         }
 
-        // Only read current speed from filesystem when we need to change it
-        if self.is_init {
-            // Verify current speed only when we intend to change it
-            let current_speed: u32 = match fs::read_to_string(&fan.state) {
-                Ok(content) => match content.trim().parse::<u32>() {
-                    Ok(speed) => speed,
-                    Err(e) => {
-                        error!("Can't parse speed value: {e}");
-                        return;
-                    }
-                },
-                Err(e) => {
-                    error!("Device is not available: {e}");
-                    self.fan_device = None;
-                    return;
-                }
-            };
-
-            if current_speed == desired_speed {
-                debug!("Temp: {current_temp:.2}°C, no speed change needed");
-            } else {
-                info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
-                if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
-                    fan.last_state = Some(desired_speed);
-                } else {
-                    error!("Can't set speed on device {}", fan.state.display());
-                    self.fan_device = None;
-                }
-            }
-        } else {
+        // Speed needs to change - write the new value
+        if !self.is_init {
             debug!("Setting the speed for the first time!");
             self.is_init = true;
-            info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
-            if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
-                fan.last_state = Some(desired_speed);
-            } else {
-                error!("Can't set speed on device {}", fan.state.display());
-                self.fan_device = None;
-            }
+        }
+        
+        info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
+        if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
+            fan.last_state = Some(desired_speed);
+        } else {
+            error!("Can't set speed on device {}", fan.state.display());
+            self.fan_device = None;
         }
     }
 }
