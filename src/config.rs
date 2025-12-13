@@ -319,10 +319,7 @@ mod tests {
                 max: 60.0,
                 min: 40.0,
             },
-            state: State {
-                max: None,
-                min: 5,
-            },
+            state: State { max: None, min: 5 },
             sleep_time: 5,
         };
 
@@ -404,10 +401,7 @@ mod tests {
                 max: 60.0,
                 min: 40.0,
             },
-            state: State {
-                max: None,
-                min: 1,
-            },
+            state: State { max: None, min: 1 },
             sleep_time: 5,
         };
 
