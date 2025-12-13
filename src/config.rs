@@ -165,7 +165,7 @@ mod tests {
         let err = result.unwrap_err();
         let err_msg = err
             .downcast_ref::<String>()
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .or_else(|| err.downcast_ref::<&str>().map(|s| *s))
             .unwrap_or("<non-string panic>");
         assert!(
@@ -208,10 +208,8 @@ mod tests {
             },
             sleep_time: 5,
         };
-        let msg_contains = format!(
-            "Configured min state {} exceeds device max state {}",
-            min_state, max_state
-        );
+        let msg_contains =
+            format!("Configured min state {min_state} exceeds device max state {max_state}");
         assert_panics(|| config.check_config(5), &msg_contains);
     }
 
