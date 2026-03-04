@@ -1,22 +1,39 @@
+#[cfg(feature = "std")]
 use std::{env, io::Write, str::FromStr};
 
+#[cfg(feature = "std")]
 use env_logger::Builder;
+#[cfg(feature = "std")]
 use log::{Level, LevelFilter, info};
 
+#[cfg(feature = "std")]
 const LOWER_TEMP_THRESHOLD: f64 = 45.0;
+#[cfg(feature = "std")]
 const UPPER_TEMP_THRESHOLD: f64 = 65.0;
+#[cfg(feature = "std")]
 const MIN_STATE: u32 = 0;
 
+/// Fan controller configuration.
+///
+/// In `no_std` environments (without the `std` feature), only the struct fields
+/// and [`Config::check_config`] are available. Construction via [`Config::new`]
+/// and the [`Default`] implementation require the `std` feature.
 pub struct Config {
     pub threshold: Threshold,
     pub state: State,
     pub sleep_time: u64,
 }
+#[cfg(feature = "std")]
 const RED: &str = "\x1b[31m";
+#[cfg(feature = "std")]
 const YELLOW: &str = "\x1b[33m";
+#[cfg(feature = "std")]
 const GREEN: &str = "\x1b[32m";
+#[cfg(feature = "std")]
 const BLUE: &str = "\x1b[34m";
+#[cfg(feature = "std")]
 const CYAN: &str = "\x1b[36m";
+#[cfg(feature = "std")]
 const RESET: &str = "\x1b[0m";
 
 #[derive(Debug)]
@@ -30,6 +47,7 @@ pub struct Threshold {
     pub min: f64,
 }
 
+#[cfg(feature = "std")]
 impl Default for Config {
     fn default() -> Self {
         Self::new()
@@ -37,6 +55,7 @@ impl Default for Config {
 }
 
 impl Config {
+    #[cfg(feature = "std")]
     fn get_level_color<T: Into<Option<Level>>>(level: T) -> &'static str {
         match level.into() {
             Some(Level::Error) => RED,
@@ -47,6 +66,7 @@ impl Config {
             None => RESET,
         }
     }
+    #[cfg(feature = "std")]
     fn setup_logging(debug_mode: bool) {
         let level_filter = match env::var("LOG_LEVEL")
             .unwrap_or_else(|_| "info".into())
@@ -88,12 +108,14 @@ impl Config {
             println!("{msg}");
         }
     }
+    #[cfg(feature = "std")]
     fn get_env<T: FromStr>(key: &str, fallback: T) -> T {
         env::var(key)
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(fallback)
     }
+    #[cfg(feature = "std")]
     #[must_use]
     pub fn new() -> Self {
         let debug = Self::get_env("DEBUG", false);
@@ -148,7 +170,7 @@ impl Config {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use std::panic;
 
