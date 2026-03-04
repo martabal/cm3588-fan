@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs::{self, File},
+    io::Read,
+};
 
 use log::{debug, error, info, trace};
 
@@ -9,6 +12,7 @@ pub struct Checker {
     pub config: Config,
     fan_device: Option<Fan>,
     temp_device: Option<Temp>,
+    buf: String,
 }
 
 impl Default for Checker {
@@ -36,6 +40,7 @@ impl Checker {
             config,
             fan_device,
             temp_device,
+            buf: String::new(),
         }
     }
 
@@ -50,22 +55,6 @@ impl Checker {
             }
         }
 
-        let fan = self.fan_device.as_mut().unwrap();
-        let current_speed: u32 = match fs::read_to_string(&fan.state) {
-            Ok(content) => match content.trim().parse::<u32>() {
-                Ok(speed) => speed,
-                Err(e) => {
-                    error!("Can't parse speed value: {e}");
-                    return;
-                }
-            },
-            Err(e) => {
-                error!("Device is not available: {e}");
-                self.fan_device = None;
-                return;
-            }
-        };
-
         if self.temp_device.is_none() {
             if let Ok(device) = Temp::new() {
                 trace!("New temp device detected");
@@ -77,7 +66,7 @@ impl Checker {
         }
 
         let temp = self.temp_device.as_ref().unwrap();
-        let current_temp = match temp.get_current_temp() {
+        let current_temp = match temp.get_current_temp(&mut self.buf) {
             Ok(temp) => temp,
             Err(err) => {
                 error!("Can't read temperature: {err}");
@@ -87,6 +76,7 @@ impl Checker {
         };
         debug!("Current temp {current_temp}");
 
+        let fan = self.fan_device.as_mut().unwrap();
         let desired_speed = fan.choose_speed(current_temp, &self.config);
         debug!("Desired speed {desired_speed}");
 
@@ -94,6 +84,23 @@ impl Checker {
             debug!("State unchanged");
             return;
         }
+
+        self.buf.clear();
+        let current_speed: u32 =
+            match File::open(&fan.state).and_then(|mut f| f.read_to_string(&mut self.buf)) {
+                Ok(_) => match self.buf.trim().parse::<u32>() {
+                    Ok(speed) => speed,
+                    Err(e) => {
+                        error!("Can't parse speed value: {e}");
+                        return;
+                    }
+                },
+                Err(e) => {
+                    error!("Device is not available: {e}");
+                    self.fan_device = None;
+                    return;
+                }
+            };
 
         if current_speed != desired_speed || !self.is_init {
             if !self.is_init {
@@ -178,6 +185,7 @@ mod tests {
             config: create_test_config(),
             fan_device: None,
             temp_device: None,
+            buf: String::new(),
         };
         assert!(!checker.is_init);
         assert!(checker.fan_device.is_none());
@@ -191,6 +199,7 @@ mod tests {
             config: create_test_config(),
             fan_device: None,
             temp_device: None,
+            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -207,6 +216,7 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
+            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -224,6 +234,7 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
+            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -240,6 +251,7 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
+            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -257,6 +269,7 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
+            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -272,6 +285,7 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: None,
+            buf: String::new(),
         };
 
         checker.adjust_speed();
