@@ -88,22 +88,21 @@ impl Checker {
         // Only read the current fan state when we may need to write a new value,
         // avoiding a syscall in the common steady-state case.
         self.buf.clear();
-        let current_speed: u32 = match File::open(&fan.state)
-            .and_then(|mut f| f.read_to_string(&mut self.buf))
-        {
-            Ok(_) => match self.buf.trim().parse::<u32>() {
-                Ok(speed) => speed,
+        let current_speed: u32 =
+            match File::open(&fan.state).and_then(|mut f| f.read_to_string(&mut self.buf)) {
+                Ok(_) => match self.buf.trim().parse::<u32>() {
+                    Ok(speed) => speed,
+                    Err(e) => {
+                        error!("Can't parse speed value: {e}");
+                        return;
+                    }
+                },
                 Err(e) => {
-                    error!("Can't parse speed value: {e}");
+                    error!("Device is not available: {e}");
+                    self.fan_device = None;
                     return;
                 }
-            },
-            Err(e) => {
-                error!("Device is not available: {e}");
-                self.fan_device = None;
-                return;
-            }
-        };
+            };
 
         if current_speed != desired_speed || !self.is_init {
             if !self.is_init {
