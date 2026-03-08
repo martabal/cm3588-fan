@@ -20,10 +20,10 @@ impl Temp {
         Ok(Self { path })
     }
 
-    pub fn get_current_temp(&self, buf: &mut String) -> Result<f64, Box<dyn Error>> {
+    pub fn get_current_temp(&self, buf: &mut String) -> Result<f32, Box<dyn Error>> {
         buf.clear();
         File::open(&self.path)?.read_to_string(buf)?;
-        Ok(buf.trim().parse::<f64>()? / 1000.0)
+        Ok(buf.trim().parse::<f32>()? / 1000.0)
     }
 
     pub fn get_temp_path() -> Result<PathBuf, Box<dyn Error>> {

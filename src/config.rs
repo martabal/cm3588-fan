@@ -3,9 +3,9 @@ use std::{env, io::Write, str::FromStr};
 use env_logger::Builder;
 use log::{Level, LevelFilter, info};
 
-const LOWER_TEMP_THRESHOLD: f64 = 45.0;
-const UPPER_TEMP_THRESHOLD: f64 = 65.0;
-const MIN_STATE: u32 = 0;
+const LOWER_TEMP_THRESHOLD: f32 = 45.0;
+const UPPER_TEMP_THRESHOLD: f32 = 65.0;
+const MIN_STATE: u8 = 0;
 
 pub struct Config {
     pub threshold: Threshold,
@@ -21,13 +21,13 @@ const RESET: &str = "\x1b[0m";
 
 #[derive(Debug)]
 pub struct State {
-    pub max: Option<u32>,
-    pub min: u32,
+    pub max: Option<u8>,
+    pub min: u8,
 }
 #[derive(Debug)]
 pub struct Threshold {
-    pub max: f64,
-    pub min: f64,
+    pub max: f32,
+    pub min: f32,
 }
 
 impl Default for Config {
@@ -105,7 +105,7 @@ impl Config {
 
         let max_state = env::var("MAX_STATE")
             .ok()
-            .and_then(|s| s.parse::<u32>().ok());
+            .and_then(|s| s.parse::<u8>().ok());
         Self {
             sleep_time,
             threshold: Threshold {
@@ -119,7 +119,7 @@ impl Config {
         }
     }
 
-    pub fn check_config(&self, fan_max_state: u32) {
+    pub fn check_config(&self, fan_max_state: u8) {
         assert!(
             self.threshold.min < self.threshold.max,
             "min threshold can't be >= max threshold: {} >= {}",

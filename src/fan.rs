@@ -13,15 +13,15 @@ const DEVICE_TYPE_PWM_FAN: &str = "pwm-fan";
 pub struct Fan {
     pub path: PathBuf,
     pub state: PathBuf,
-    pub max_state: u32,
-    pub temp_slots: Vec<(u32, f64)>,
-    pub last_state: Option<u32>,
+    pub max_state: u8,
+    pub temp_slots: Vec<(u8, f32)>,
+    pub last_state: Option<u8>,
 }
 
 impl Fan {
-    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u32, Box<dyn Error>> {
+    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u8, Box<dyn Error>> {
         let content = fs::read_to_string(device.as_ref().join("max_state"))?;
-        Ok(content.trim().parse::<u32>()?)
+        Ok(content.trim().parse::<u8>()?)
     }
 
     #[must_use]
@@ -39,13 +39,13 @@ impl Fan {
         }
     }
 
-    fn calculate_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+    fn calculate_slots(config: &Config, max_state: u8) -> Vec<(u8, f32)> {
         let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
 
         let step = if num_slots <= 1 {
             0.0
         } else {
-            (config.threshold.max - config.threshold.min) / f64::from(num_slots - 1)
+            (config.threshold.max - config.threshold.min) / f32::from(num_slots - 1)
         };
 
         trace!(
@@ -60,7 +60,7 @@ impl Fan {
                     if num_slots == 1 {
                         config.threshold.min
                     } else {
-                        f64::from(i).mul_add(step, config.threshold.min)
+                        f32::from(i).mul_add(step, config.threshold.min)
                     },
                 )
             })
@@ -85,7 +85,7 @@ impl Fan {
         })
     }
 
-    fn get_temperature_slots(config: &Config, max_state: u32) -> Vec<(u32, f64)> {
+    fn get_temperature_slots(config: &Config, max_state: u8) -> Vec<(u8, f32)> {
         let max_state = config.state.max.unwrap_or(max_state);
         trace!("max_state: {max_state}");
         if max_state == 0 {
@@ -109,7 +109,7 @@ impl Fan {
     }
 
     #[must_use]
-    pub fn choose_speed(&self, current_temp: f64, config: &Config) -> u32 {
+    pub fn choose_speed(&self, current_temp: f32, config: &Config) -> u8 {
         match current_temp {
             t if t < config.threshold.min => {
                 trace!("Min state desired");
@@ -184,8 +184,8 @@ mod tests {
 
         let step = (max_threshold - min_threshold) / 4.0;
         assert_eq!(slots[1], (2, min_threshold + step));
-        assert_eq!(slots[2], (3, 2.0f64.mul_add(step, min_threshold)));
-        assert_eq!(slots[3], (4, 3.0f64.mul_add(step, min_threshold)));
+        assert_eq!(slots[2], (3, 2.0f32.mul_add(step, min_threshold)));
+        assert_eq!(slots[3], (4, 3.0f32.mul_add(step, min_threshold)));
     }
 
     #[test]

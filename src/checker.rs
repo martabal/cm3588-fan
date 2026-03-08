@@ -86,9 +86,9 @@ impl Checker {
         }
 
         self.buf.clear();
-        let current_speed: u32 =
+        let current_speed: u8 =
             match File::open(&fan.state).and_then(|mut f| f.read_to_string(&mut self.buf)) {
-                Ok(_) => match self.buf.trim().parse::<u32>() {
+                Ok(_) => match self.buf.trim().parse::<u8>() {
                     Ok(speed) => speed,
                     Err(e) => {
                         error!("Can't parse speed value: {e}");
@@ -151,7 +151,7 @@ mod tests {
             Self { path }
         }
 
-        fn create_fan(&self, state_content: &str, last_state: Option<u32>) -> Fan {
+        fn create_fan(&self, state_content: &str, last_state: Option<u8>) -> Fan {
             let state_file = self.path.join("cur_state");
             fs::write(&state_file, state_content).unwrap();
 
