@@ -134,8 +134,7 @@ fn e2e_full_temperature_to_speed_mapping() {
 
     let cases: &[(f32, u8)] = &[
         (20.0, 0), // below min threshold → min state
-        (40.0, 1), // at min threshold → slot (1, 40.0) (not the min-state branch
-        //   because `t < threshold.min` is false at exactly 40.0)
+        (40.0, 1), // at min threshold → slot (1, 40.0); not min-state branch since `t < threshold.min` is false at exactly 40.0
         (50.0, 2), // mid-range
         (80.0, 5), // at max threshold → max state
         (90.0, 5), // above max threshold → max state

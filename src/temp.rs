@@ -190,8 +190,8 @@ mod tests {
 
     // ── get_temp_path_from tests ─────────────────────────────────────────────
 
-    fn create_thermal_zone(root: &PathBuf, zone: &str, temp_content: &str) {
-        let zone_dir = root.join(zone);
+    fn create_thermal_zone(root: impl AsRef<Path>, zone: &str, temp_content: &str) {
+        let zone_dir = root.as_ref().join(zone);
         fs::create_dir_all(&zone_dir).unwrap();
         fs::write(zone_dir.join("temp"), temp_content).unwrap();
     }
