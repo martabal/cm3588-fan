@@ -5,7 +5,7 @@ use std::{
 
 use log::{debug, error, info, trace};
 
-use crate::{config::Config, fan::Fan, temp::Temp};
+use crate::{THERMAL_DIR, config::Config, fan::Fan, temp::Temp};
 
 pub struct Checker {
     is_init: bool,
@@ -13,6 +13,7 @@ pub struct Checker {
     fan_device: Option<Fan>,
     temp_device: Option<Temp>,
     buf: String,
+    thermal_dir: String,
 }
 
 impl Default for Checker {
@@ -24,7 +25,8 @@ impl Default for Checker {
 impl Checker {
     #[must_use]
     pub fn new() -> Self {
-        let temp_device = match Temp::new() {
+        let thermal_dir = THERMAL_DIR.to_owned();
+        let temp_device = match Temp::new_from(&thermal_dir) {
             Ok(temp) => Some(temp),
             Err(err) => {
                 error!("Can't read temperature: {err}");
@@ -41,12 +43,13 @@ impl Checker {
             fan_device,
             temp_device,
             buf: String::new(),
+            thermal_dir,
         }
     }
 
     pub fn adjust_speed(&mut self) {
         if self.fan_device.is_none() {
-            if let Some((fan_path, path)) = Fan::get_fan_device() {
+            if let Some((fan_path, path)) = Fan::get_fan_device_from(&self.thermal_dir) {
                 trace!("New fan device detected");
                 self.fan_device = Some(Fan::new_fan_device(fan_path, path, &self.config));
             } else {
@@ -56,7 +59,7 @@ impl Checker {
         }
 
         if self.temp_device.is_none() {
-            if let Ok(device) = Temp::new() {
+            if let Ok(device) = Temp::new_from(&self.thermal_dir) {
                 trace!("New temp device detected");
                 self.temp_device = Some(device);
             } else {
@@ -186,6 +189,7 @@ mod tests {
             fan_device: None,
             temp_device: None,
             buf: String::new(),
+            thermal_dir: String::new(),
         };
         assert!(!checker.is_init);
         assert!(checker.fan_device.is_none());
@@ -200,6 +204,7 @@ mod tests {
             fan_device: None,
             temp_device: None,
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
@@ -217,6 +222,7 @@ mod tests {
             fan_device: Some(fan),
             temp_device: Some(temp),
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
@@ -235,6 +241,7 @@ mod tests {
             fan_device: Some(fan),
             temp_device: Some(temp),
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
@@ -252,6 +259,7 @@ mod tests {
             fan_device: Some(fan),
             temp_device: Some(temp),
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
@@ -270,6 +278,7 @@ mod tests {
             fan_device: Some(fan),
             temp_device: Some(temp),
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
@@ -286,8 +295,133 @@ mod tests {
             fan_device: Some(fan),
             temp_device: None,
             buf: String::new(),
+            thermal_dir: String::new(),
         };
 
         checker.adjust_speed();
+    }
+
+    // ── new tests ─────────────────────────────────────────────────────────────
+
+    impl TestEnv {
+        /// Create a minimal mock sysfs suitable for both fan and temp recovery
+        /// tests. The directory layout is:
+        ///   <root>/cooling_device0/{type, max_state, cur_state}
+        ///   <root>/thermal_zone0/temp
+        fn create_mock_sysfs(&self, temp_content: &str) {
+            // cooling device
+            let dev = self.path.join("cooling_device0");
+            fs::create_dir_all(&dev).unwrap();
+            fs::write(dev.join("type"), "pwm-fan").unwrap();
+            fs::write(dev.join("max_state"), "5").unwrap();
+            fs::write(dev.join("cur_state"), "0").unwrap();
+
+            // thermal zone
+            let zone = self.path.join("thermal_zone0");
+            fs::create_dir_all(&zone).unwrap();
+            fs::write(zone.join("temp"), temp_content).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_adjust_speed_fan_recovers() {
+        let env = TestEnv::new("test_checker_fan_recovers");
+        env.create_mock_sysfs("55000");
+        let temp = env.create_temp("55000");
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: None,
+            temp_device: Some(temp),
+            buf: String::new(),
+            thermal_dir: env.path.to_string_lossy().into_owned(),
+        };
+
+        checker.adjust_speed();
+
+        assert!(
+            checker.fan_device.is_some(),
+            "fan should be detected and assigned"
+        );
+        assert!(checker.is_init);
+    }
+
+    #[test]
+    fn test_adjust_speed_temp_recovers() {
+        let env = TestEnv::new("test_checker_temp_recovers");
+        env.create_mock_sysfs("55000");
+        let fan = env.create_fan("0", None);
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: None,
+            buf: String::new(),
+            thermal_dir: env.path.to_string_lossy().into_owned(),
+        };
+
+        checker.adjust_speed();
+
+        assert!(
+            checker.temp_device.is_some(),
+            "temp device should be detected and assigned"
+        );
+        assert!(checker.is_init);
+    }
+
+    #[test]
+    fn test_adjust_speed_no_speed_change_when_already_correct() {
+        let env = TestEnv::new("test_checker_no_change");
+        // Temp 55 °C with the test config slots maps to state 2.
+        // Pre-write "2" to the state file and set last_state = None so the
+        // checker reads the file and finds current_speed == desired_speed.
+        let fan = env.create_fan("2", None);
+        let temp = env.create_temp("55000");
+
+        // We need is_init = true so the `|| !self.is_init` branch does not
+        // force a write.
+        let mut checker = Checker {
+            is_init: true,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+            buf: String::new(),
+            thermal_dir: String::new(),
+        };
+
+        checker.adjust_speed();
+
+        // The fan device must still be present (no error path triggered).
+        assert!(checker.fan_device.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_adjust_speed_write_failure_clears_fan_device() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let env = TestEnv::new("test_checker_write_fail");
+        let fan = env.create_fan("0", None);
+        let temp = env.create_temp("80000"); // high temp → max speed → definitely different from 0
+
+        // Make the state file read-only so the write fails.
+        let state_path = env.path.join("cur_state");
+        fs::set_permissions(&state_path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let mut checker = Checker {
+            is_init: false,
+            config: create_test_config(),
+            fan_device: Some(fan),
+            temp_device: Some(temp),
+            buf: String::new(),
+            thermal_dir: String::new(),
+        };
+
+        checker.adjust_speed();
+
+        // The fan device must have been cleared after the write error.
+        assert!(checker.fan_device.is_none());
     }
 }

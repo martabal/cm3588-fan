@@ -69,20 +69,27 @@ impl Fan {
 
     #[must_use]
     pub fn get_fan_device() -> Option<(PathBuf, PathBuf)> {
-        fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
-            let entry_path = entry.path();
-            if entry_path
-                .file_name()?
-                .to_str()?
-                .starts_with(DEVICE_NAME_COOLING)
-            {
-                let content = fs::read_to_string(entry_path.join("type")).ok()?;
-                if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    return Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path));
+        Self::get_fan_device_from(THERMAL_DIR)
+    }
+
+    pub fn get_fan_device_from(dir: impl AsRef<Path>) -> Option<(PathBuf, PathBuf)> {
+        fs::read_dir(dir.as_ref())
+            .ok()?
+            .flatten()
+            .find_map(|entry| {
+                let entry_path = entry.path();
+                if entry_path
+                    .file_name()?
+                    .to_str()?
+                    .starts_with(DEVICE_NAME_COOLING)
+                {
+                    let content = fs::read_to_string(entry_path.join("type")).ok()?;
+                    if content.trim() == DEVICE_TYPE_PWM_FAN {
+                        return Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path));
+                    }
                 }
-            }
-            None
-        })
+                None
+            })
     }
 
     fn get_temperature_slots(config: &Config, max_state: u8) -> Vec<(u8, f32)> {
@@ -521,5 +528,118 @@ mod tests {
 
         let result = fan.choose_speed(51.0, &config);
         assert_eq!(result, 2);
+    }
+
+    // ── calculate_slots with max = None ──────────────────────────────────────
+
+    #[test]
+    fn test_calculate_slots_with_no_max_state_config() {
+        let config = Config {
+            threshold: Threshold {
+                min: 40.0,
+                max: 80.0,
+            },
+            state: State { max: None, min: 0 },
+            sleep_time: 5,
+        };
+
+        // max_state parameter is used when config.state.max is None.
+        let slots = Fan::calculate_slots(&config, 5);
+
+        assert_eq!(slots.len(), 5);
+        assert_eq!(slots[0], (1, 40.0));
+        assert_eq!(slots[4], (5, 80.0));
+    }
+
+    // ── get_temperature_slots with max_state == 0 ────────────────────────────
+
+    struct FanTestDir {
+        path: PathBuf,
+    }
+
+    impl FanTestDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        /// Create a minimal cooling-device sub-directory.
+        fn create_cooling_device(&self, name: &str, device_type: &str, max_state: &str) {
+            let dev = self.path.join(name);
+            std::fs::create_dir_all(&dev).unwrap();
+            std::fs::write(dev.join("type"), device_type).unwrap();
+            std::fs::write(dev.join("max_state"), max_state).unwrap();
+            std::fs::write(dev.join("cur_state"), "0").unwrap();
+        }
+    }
+
+    impl Drop for FanTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn test_new_fan_device_with_zero_max_state_gives_empty_slots() {
+        let dir = FanTestDir::new("test_fan_zero_max_state");
+        dir.create_cooling_device("cooling_device0", "pwm-fan", "0");
+
+        let dev_dir = dir.path.join("cooling_device0");
+        let config = Config {
+            threshold: Threshold {
+                min: 40.0,
+                max: 80.0,
+            },
+            state: State { max: None, min: 0 },
+            sleep_time: 5,
+        };
+
+        let fan = Fan::new_fan_device(dev_dir.join("cur_state"), dev_dir, &config);
+
+        assert_eq!(fan.max_state, 0);
+        assert!(fan.temp_slots.is_empty());
+    }
+
+    // ── get_fan_device_from tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_get_fan_device_from_happy_path() {
+        let dir = FanTestDir::new("test_fan_device_from_happy");
+        dir.create_cooling_device("cooling_device0", "pwm-fan", "5");
+
+        let result = Fan::get_fan_device_from(&dir.path);
+
+        assert!(result.is_some());
+        let (state, path) = result.unwrap();
+        assert_eq!(path.file_name().unwrap(), "cooling_device0");
+        assert!(state.ends_with("cur_state"));
+    }
+
+    #[test]
+    fn test_get_fan_device_from_wrong_type_returns_none() {
+        let dir = FanTestDir::new("test_fan_device_wrong_type");
+        dir.create_cooling_device("cooling_device0", "not-a-fan", "5");
+
+        let result = Fan::get_fan_device_from(&dir.path);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_fan_device_from_no_cooling_device_returns_none() {
+        let dir = FanTestDir::new("test_fan_device_no_device");
+        // Create a thermal_zone dir that should be ignored.
+        std::fs::create_dir_all(dir.path.join("thermal_zone0")).unwrap();
+
+        let result = Fan::get_fan_device_from(&dir.path);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_fan_device_from_nonexistent_dir_returns_none() {
+        let result = Fan::get_fan_device_from("/nonexistent/thermal/path");
+        assert!(result.is_none());
     }
 }
