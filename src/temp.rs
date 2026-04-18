@@ -3,7 +3,7 @@ use std::{
     error::Error,
     fs::{self, File},
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use crate::THERMAL_DIR;
@@ -16,7 +16,11 @@ const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 impl Temp {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let path = Self::get_temp_path()?;
+        Self::new_from(THERMAL_DIR)
+    }
+
+    pub fn new_from(dir: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+        let path = Self::get_temp_path_from(dir)?;
         Ok(Self { path })
     }
 
@@ -27,7 +31,11 @@ impl Temp {
     }
 
     pub fn get_temp_path() -> Result<PathBuf, Box<dyn Error>> {
-        for entry in fs::read_dir(THERMAL_DIR)? {
+        Self::get_temp_path_from(THERMAL_DIR)
+    }
+
+    pub fn get_temp_path_from(dir: impl AsRef<Path>) -> Result<PathBuf, Box<dyn Error>> {
+        for entry in fs::read_dir(dir.as_ref())? {
             let entry = entry?;
             let path = entry.path();
 
@@ -178,5 +186,62 @@ mod tests {
         let result = temp.get_current_temp(&mut buf);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), -5.0);
+    }
+
+    // ── get_temp_path_from tests ─────────────────────────────────────────────
+
+    fn create_thermal_zone(root: &PathBuf, zone: &str, temp_content: &str) {
+        let zone_dir = root.join(zone);
+        fs::create_dir_all(&zone_dir).unwrap();
+        fs::write(zone_dir.join("temp"), temp_content).unwrap();
+    }
+
+    #[test]
+    fn test_get_temp_path_from_valid_zone() {
+        let root = TempTestDir::new("test_temp_path_valid_zone");
+        create_thermal_zone(&root.path, "thermal_zone0", "45000\n");
+
+        let result = Temp::get_temp_path_from(&root.path);
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with("temp"));
+    }
+
+    #[test]
+    fn test_get_temp_path_from_no_valid_zone() {
+        let root = TempTestDir::new("test_temp_path_no_valid");
+        // Zone exists but temp file contains non-numeric content.
+        let zone_dir = root.path.join("thermal_zone0");
+        fs::create_dir_all(&zone_dir).unwrap();
+        fs::write(zone_dir.join("temp"), "not_a_number").unwrap();
+
+        let result = Temp::get_temp_path_from(&root.path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_temp_path_from_ignores_non_zone_dirs() {
+        let root = TempTestDir::new("test_temp_path_ignores_non_zone");
+        // Only a directory that does NOT start with "thermal_zone".
+        let other_dir = root.path.join("cooling_device0");
+        fs::create_dir_all(&other_dir).unwrap();
+        fs::write(other_dir.join("temp"), "45000").unwrap();
+
+        let result = Temp::get_temp_path_from(&root.path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_temp_path_from_nonexistent_dir() {
+        let result = Temp::get_temp_path_from("/nonexistent/thermal/dir");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_from_valid_dir() {
+        let root = TempTestDir::new("test_new_from_valid");
+        create_thermal_zone(&root.path, "thermal_zone0", "55000\n");
+
+        let result = Temp::new_from(&root.path);
+        assert!(result.is_ok());
     }
 }
