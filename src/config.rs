@@ -3,10 +3,10 @@ use std::{env, io::Write, str::FromStr};
 use env_logger::Builder;
 use log::{Level, LevelFilter, info};
 
-const LOWER_TEMP_THRESHOLD: f32 = 45.0;
-const UPPER_TEMP_THRESHOLD: f32 = 65.0;
-const MIN_STATE: u8 = 0;
-pub const MAX_STATE: u8 = 5;
+const DEFAULT_LOWER_TEMP_THRESHOLD: f32 = 45.0;
+const DEFAULT_UPPER_TEMP_THRESHOLD: f32 = 65.0;
+const DEFAULT_MIN_STATE: u8 = 0;
+pub const DEFAULT_MAX_STATE: u8 = 5;
 
 pub const DEFAULT_SLEEP_TIME: u64 = 5;
 
@@ -102,9 +102,9 @@ impl Config {
         let debug = Self::get_env("DEBUG", false);
         Self::setup_logging(debug);
         let sleep_time = Self::get_env("SLEEP_TIME", DEFAULT_SLEEP_TIME);
-        let max_threshold = Self::get_env("MAX_THRESHOLD", UPPER_TEMP_THRESHOLD);
-        let min_threshold = Self::get_env("MIN_THRESHOLD", LOWER_TEMP_THRESHOLD);
-        let min_state = Self::get_env("MIN_STATE", MIN_STATE);
+        let max_threshold = Self::get_env("MAX_THRESHOLD", DEFAULT_UPPER_TEMP_THRESHOLD);
+        let min_threshold = Self::get_env("MIN_THRESHOLD", DEFAULT_LOWER_TEMP_THRESHOLD);
+        let min_state = Self::get_env("MIN_STATE", DEFAULT_MIN_STATE);
 
         let max_state = env::var("MAX_STATE")
             .ok()
@@ -155,7 +155,7 @@ impl Config {
 mod tests {
     use std::panic;
 
-    use crate::config::{Config, DEFAULT_SLEEP_TIME, MAX_STATE};
+    use crate::config::{Config, DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME};
 
     use super::{State, Threshold};
 
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_valid_config_with_fan_device() {
-        let max_state = Some(MAX_STATE);
+        let max_state = Some(DEFAULT_MAX_STATE);
         let min_state = 3;
 
         let config: Config = Config {
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn threshold_min_exceeds_threshold_max_panics() {
-        let max_state = Some(MAX_STATE);
+        let max_state = Some(DEFAULT_MAX_STATE);
         let min_state = 0;
 
         let config: Config = Config {
@@ -304,7 +304,7 @@ mod tests {
                 min: 50.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
@@ -335,7 +335,7 @@ mod tests {
                 min: 40.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
@@ -352,7 +352,7 @@ mod tests {
                 min: 40.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
@@ -369,7 +369,7 @@ mod tests {
                 min: 100.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,

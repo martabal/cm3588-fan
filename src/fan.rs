@@ -142,7 +142,7 @@ impl Fan {
 #[cfg(test)]
 mod tests {
 
-    use crate::config::{DEFAULT_SLEEP_TIME, MAX_STATE, State, Threshold};
+    use crate::config::{DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME, State, Threshold};
 
     use super::*;
 
@@ -178,12 +178,12 @@ mod tests {
                 min: min_threshold,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, MAX_STATE);
+        let slots = Fan::calculate_slots(&fan, DEFAULT_MAX_STATE);
 
         assert_eq!(slots[0].unwrap(), (1, 40.0));
         assert_eq!(slots[4].unwrap(), (5, max_threshold));
@@ -207,15 +207,15 @@ mod tests {
                 min: min_threshold,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: min_state,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, MAX_STATE);
+        let slots = Fan::calculate_slots(&fan, DEFAULT_MAX_STATE);
 
         assert_eq!(slots[1], None);
-        assert_eq!(slots[0].unwrap(), (MAX_STATE, min_threshold));
+        assert_eq!(slots[0].unwrap(), (DEFAULT_MAX_STATE, min_threshold));
     }
 
     #[test]
@@ -230,12 +230,12 @@ mod tests {
                 min: min_threshold,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: min_state,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, MAX_STATE);
+        let slots = Fan::calculate_slots(&fan, DEFAULT_MAX_STATE);
 
         assert_eq!(slots[0], None);
     }
@@ -249,18 +249,18 @@ mod tests {
                 min: 40.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 0,
             },
         };
 
         let current_temp = 60.0;
 
-        let slots = Fan::calculate_slots(&config, MAX_STATE);
+        let slots = Fan::calculate_slots(&config, DEFAULT_MAX_STATE);
 
         let fan = Fan {
             temp_slots: slots,
-            max_state: MAX_STATE,
+            max_state: DEFAULT_MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -278,7 +278,7 @@ mod tests {
             },
             state: State {
                 min: 0,
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
             },
             sleep_time: DEFAULT_SLEEP_TIME,
         }
@@ -296,7 +296,7 @@ mod tests {
 
         Fan {
             temp_slots,
-            max_state: MAX_STATE,
+            max_state: DEFAULT_MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -364,7 +364,7 @@ mod tests {
 
         let fan = Fan {
             temp_slots: [None; MAX_LEVEL],
-            max_state: MAX_STATE,
+            max_state: DEFAULT_MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -439,7 +439,7 @@ mod tests {
                 max: 70.0,
             },
             state: State {
-                max: Some(MAX_STATE),
+                max: Some(DEFAULT_MAX_STATE),
                 min: 2,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
@@ -473,14 +473,14 @@ mod tests {
                 Some((5, 70.0)),
                 None,
             ],
-            max_state: MAX_STATE,
+            max_state: DEFAULT_MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
         };
 
         let result = fan.choose_speed(80.0, &config);
-        assert_eq!(result, MAX_STATE);
+        assert_eq!(result, DEFAULT_MAX_STATE);
     }
 
     #[test]
@@ -524,7 +524,7 @@ mod tests {
                 None,
                 None,
             ],
-            max_state: MAX_STATE,
+            max_state: DEFAULT_MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,

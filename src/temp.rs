@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{THERMAL_DIR, config::MAX_STATE};
+use crate::{THERMAL_DIR, config::DEFAULT_MAX_STATE};
 
 pub struct Temp {
     pub path: PathBuf,
@@ -40,7 +40,7 @@ impl fmt::Display for Error {
     }
 }
 
-pub const MAX_LEVEL: usize = MAX_STATE as usize + 1;
+pub const MAX_LEVEL: usize = DEFAULT_MAX_STATE as usize + 1;
 
 const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
