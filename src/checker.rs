@@ -123,7 +123,7 @@ impl Checker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{State, Threshold};
+    use crate::config::{DEFAULT_SLEEP_TIME, MAX_STATE, State, Threshold};
     use std::path::PathBuf;
 
     fn create_test_config() -> Config {
@@ -134,9 +134,9 @@ mod tests {
             },
             state: State {
                 min: 0,
-                max: Some(5),
+                max: Some(MAX_STATE),
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         }
     }
 
@@ -158,8 +158,15 @@ mod tests {
             Fan {
                 path: self.path.clone(),
                 state: state_file,
-                max_state: 5,
-                temp_slots: vec![(1, 45.0), (2, 50.0), (3, 55.0), (4, 60.0), (5, 65.0)],
+                max_state: MAX_STATE,
+                temp_slots: [
+                    Some((1, 45.0)),
+                    Some((2, 50.0)),
+                    Some((3, 55.0)),
+                    Some((4, 60.0)),
+                    Some((5, 65.0)),
+                    (None),
+                ],
                 last_state,
             }
         }

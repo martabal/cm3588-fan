@@ -1,32 +1,62 @@
+use core::fmt;
 use log::info;
 use std::{
-    error::Error,
     fs::{self, File},
-    io::Read,
+    io::{self, Read},
+    num::ParseFloatError,
     path::PathBuf,
 };
 
-use crate::THERMAL_DIR;
+use crate::{THERMAL_DIR, config::MAX_STATE};
 
 pub struct Temp {
     pub path: PathBuf,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    Parse(ParseFloatError),
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<ParseFloatError> for Error {
+    fn from(err: ParseFloatError) -> Self {
+        Self::Parse(err)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::Parse(e) => write!(f, "Parse error: {e}"),
+        }
+    }
+}
+
+pub const MAX_LEVEL: usize = MAX_STATE as usize + 1;
+
 const THERMAL_ZONE_NAME: &str = "thermal_zone";
 
 impl Temp {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> io::Result<Self> {
         let path = Self::get_temp_path()?;
         Ok(Self { path })
     }
 
-    pub fn get_current_temp(&self, buf: &mut String) -> Result<f32, Box<dyn Error>> {
+    pub fn get_current_temp(&self, buf: &mut String) -> Result<f32, Error> {
         buf.clear();
         File::open(&self.path)?.read_to_string(buf)?;
         Ok(buf.trim().parse::<f32>()? / 1000.0)
     }
 
-    pub fn get_temp_path() -> Result<PathBuf, Box<dyn Error>> {
+    pub fn get_temp_path() -> io::Result<PathBuf> {
         for entry in fs::read_dir(THERMAL_DIR)? {
             let entry = entry?;
             let path = entry.path();
@@ -47,7 +77,7 @@ impl Temp {
             }
         }
 
-        Err("No valid thermal zone found".into())
+        Err(io::Error::other("No valid thermal zone found"))
     }
 }
 

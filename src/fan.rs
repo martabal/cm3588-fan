@@ -1,4 +1,4 @@
-use crate::{THERMAL_DIR, config::Config};
+use crate::{THERMAL_DIR, config::Config, temp::MAX_LEVEL};
 use log::{error, info, trace};
 use std::{
     error::Error,
@@ -14,7 +14,7 @@ pub struct Fan {
     pub path: PathBuf,
     pub state: PathBuf,
     pub max_state: u8,
-    pub temp_slots: Vec<(u8, f32)>,
+    pub temp_slots: [Option<(u8, f32)>; MAX_LEVEL],
     pub last_state: Option<u8>,
 }
 
@@ -39,32 +39,39 @@ impl Fan {
         }
     }
 
-    fn calculate_slots(config: &Config, max_state: u8) -> Vec<(u8, f32)> {
-        let num_slots = config.state.max.unwrap_or(max_state) - config.state.min;
+    fn calculate_slots(config: &Config, max_state: u8) -> [Option<(u8, f32)>; MAX_LEVEL] {
+        let num_slots: usize = (config.state.max.unwrap_or(max_state) - config.state.min).into();
 
         let step = if num_slots <= 1 {
             0.0
         } else {
-            (config.threshold.max - config.threshold.min) / f32::from(num_slots - 1)
+            (config.threshold.max - config.threshold.min) / (num_slots - 1) as f32
         };
 
         trace!(
-            "Calculate slots, min_state: {}, num_slots: {num_slots}, step: {step}",
-            config.state.min
+            "Calculate slots, min_state: {}, num_slots: {}, step: {}",
+            config.state.min, num_slots, step
         );
 
-        (0..num_slots)
-            .map(|i| {
-                (
-                    i + 1 + config.state.min,
-                    if num_slots == 1 {
-                        config.threshold.min
-                    } else {
-                        f32::from(i).mul_add(step, config.threshold.min)
-                    },
-                )
-            })
-            .collect()
+        let mut results = [None; MAX_LEVEL];
+        let limit = num_slots.min(MAX_LEVEL);
+
+        for (i, result) in results.iter_mut().enumerate().take(limit) {
+            let state = config
+                .state
+                .min
+                .saturating_add(u8::try_from(i).unwrap() + 1);
+
+            let value = if num_slots <= 1 {
+                config.threshold.min
+            } else {
+                (i as f32).mul_add(step, config.threshold.min)
+            };
+
+            *result = Some((state, value));
+        }
+
+        results
     }
 
     #[must_use]
@@ -85,12 +92,12 @@ impl Fan {
         })
     }
 
-    fn get_temperature_slots(config: &Config, max_state: u8) -> Vec<(u8, f32)> {
+    fn get_temperature_slots(config: &Config, max_state: u8) -> [Option<(u8, f32)>; MAX_LEVEL] {
         let max_state = config.state.max.unwrap_or(max_state);
         trace!("max_state: {max_state}");
         if max_state == 0 {
             error!("max_state could not be determined");
-            return vec![];
+            return [None; MAX_LEVEL];
         }
         let slots = Self::calculate_slots(config, max_state);
         trace!("Slots: {slots:?}");
@@ -119,6 +126,7 @@ impl Fan {
                 trace!("Desired state in slots");
                 self.temp_slots
                     .iter()
+                    .flatten()
                     .rev()
                     .find(|(_, temp)| *temp <= current_temp)
                     .map_or(config.state.min, |(state, _)| *state)
@@ -134,7 +142,7 @@ impl Fan {
 #[cfg(test)]
 mod tests {
 
-    use crate::config::{State, Threshold};
+    use crate::config::{DEFAULT_SLEEP_TIME, MAX_STATE, State, Threshold};
 
     use super::*;
 
@@ -161,103 +169,98 @@ mod tests {
 
     #[test]
     fn test_get_temperature_slots() {
-        let max_state = 5;
         let min_threshold = 40.0;
         let max_threshold = 80.0;
         let fan = Config {
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
             },
             state: State {
-                max: Some(max_state),
+                max: Some(MAX_STATE),
                 min: 0,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, max_state);
+        let slots = Fan::calculate_slots(&fan, MAX_STATE);
 
-        assert_eq!(slots.len(), 5);
-        assert_eq!(slots[0], (1, 40.0));
-        assert_eq!(slots[4], (5, max_threshold));
+        assert_eq!(slots[0].unwrap(), (1, 40.0));
+        assert_eq!(slots[4].unwrap(), (5, max_threshold));
 
         let step = (max_threshold - min_threshold) / 4.0;
-        assert_eq!(slots[1], (2, min_threshold + step));
-        assert_eq!(slots[2], (3, 2.0f32.mul_add(step, min_threshold)));
-        assert_eq!(slots[3], (4, 3.0f32.mul_add(step, min_threshold)));
+        assert_eq!(slots[1].unwrap(), (2, min_threshold + step));
+        assert_eq!(slots[2].unwrap(), (3, 2.0f32.mul_add(step, min_threshold)));
+        assert_eq!(slots[3].unwrap(), (4, 3.0f32.mul_add(step, min_threshold)));
     }
 
     #[test]
     fn test_get_temperature_one_slot() {
         let min_state = 4;
-        let max_state = 5;
+
         let min_threshold = 40.0;
         let max_threshold = 80.0;
         let fan = Config {
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
             },
             state: State {
-                max: Some(max_state),
+                max: Some(MAX_STATE),
                 min: min_state,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, max_state);
+        let slots = Fan::calculate_slots(&fan, MAX_STATE);
 
-        assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0], (max_state, min_threshold));
+        assert_eq!(slots[1], None);
+        assert_eq!(slots[0].unwrap(), (MAX_STATE, min_threshold));
     }
 
     #[test]
     fn test_get_temperature_no_slots() {
         let min_state = 5;
-        let max_state = 5;
         let min_threshold = 40.0;
         let max_threshold = 80.0;
         let fan = Config {
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
             },
             state: State {
-                max: Some(max_state),
+                max: Some(MAX_STATE),
                 min: min_state,
             },
         };
 
-        let slots = Fan::calculate_slots(&fan, max_state);
+        let slots = Fan::calculate_slots(&fan, MAX_STATE);
 
-        assert_eq!(slots.len(), 0);
+        assert_eq!(slots[0], None);
     }
 
     #[test]
     fn test_adjust_speed() {
-        let max_state = 5;
-
         let config = Config {
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
             threshold: Threshold {
                 max: 80.0,
                 min: 40.0,
             },
             state: State {
-                max: Some(max_state),
+                max: Some(MAX_STATE),
                 min: 0,
             },
         };
 
         let current_temp = 60.0;
 
-        let slots = Fan::calculate_slots(&config, max_state);
+        let slots = Fan::calculate_slots(&config, MAX_STATE);
 
         let fan = Fan {
             temp_slots: slots,
-            max_state,
+            max_state: MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -275,25 +278,25 @@ mod tests {
             },
             state: State {
                 min: 0,
-                max: Some(5),
+                max: Some(MAX_STATE),
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         }
     }
 
     fn setup_test_fan() -> Fan {
-        let temp_slots = vec![
-            (0, 45.0),
-            (1, 50.0),
-            (2, 55.0),
-            (3, 60.0),
-            (4, 65.0),
-            (5, 70.0),
+        let temp_slots = [
+            Some((0, 45.0)),
+            Some((1, 50.0)),
+            Some((2, 55.0)),
+            Some((3, 60.0)),
+            Some((4, 65.0)),
+            Some((5, 70.0)),
         ];
 
         Fan {
             temp_slots,
-            max_state: 5,
+            max_state: MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -356,12 +359,12 @@ mod tests {
                 min: 2,
                 max: Some(2),
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         };
 
         let fan = Fan {
-            temp_slots: Vec::new(),
-            max_state: 5,
+            temp_slots: [None; MAX_LEVEL],
+            max_state: MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
@@ -418,14 +421,14 @@ mod tests {
                 max: Some(2),
                 min: 0,
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         };
 
         let slots = Fan::calculate_slots(&config, 5);
 
-        assert_eq!(slots.len(), 2);
-        assert_eq!(slots[0], (1, 40.0));
-        assert_eq!(slots[1], (2, 60.0));
+        assert_eq!(slots[2], None);
+        assert_eq!(slots[0].unwrap(), (1, 40.0));
+        assert_eq!(slots[1].unwrap(), (2, 60.0));
     }
 
     #[test]
@@ -436,18 +439,18 @@ mod tests {
                 max: 70.0,
             },
             state: State {
-                max: Some(5),
+                max: Some(MAX_STATE),
                 min: 2,
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         };
 
         let slots = Fan::calculate_slots(&config, 5);
 
-        assert_eq!(slots.len(), 3);
-        assert_eq!(slots[0].0, 3);
-        assert_eq!(slots[1].0, 4);
-        assert_eq!(slots[2].0, 5);
+        assert_eq!(slots[3], None);
+        assert_eq!(slots[0].unwrap().0, 3);
+        assert_eq!(slots[1].unwrap().0, 4);
+        assert_eq!(slots[2].unwrap().0, 5);
     }
 
     #[test]
@@ -458,19 +461,26 @@ mod tests {
                 max: 70.0,
             },
             state: State { min: 0, max: None },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         };
 
         let fan = Fan {
-            temp_slots: vec![(1, 50.0), (2, 55.0), (3, 60.0), (4, 65.0), (5, 70.0)],
-            max_state: 5,
+            temp_slots: [
+                Some((1, 50.0)),
+                Some((2, 55.0)),
+                Some((3, 60.0)),
+                Some((4, 65.0)),
+                Some((5, 70.0)),
+                None,
+            ],
+            max_state: MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
         };
 
         let result = fan.choose_speed(80.0, &config);
-        assert_eq!(result, 5);
+        assert_eq!(result, MAX_STATE);
     }
 
     #[test]
@@ -502,12 +512,19 @@ mod tests {
                 min: 0,
                 max: Some(3),
             },
-            sleep_time: 5,
+            sleep_time: DEFAULT_SLEEP_TIME,
         };
 
         let fan = Fan {
-            temp_slots: vec![(1, 40.0), (2, 50.0), (3, 60.0)],
-            max_state: 5,
+            temp_slots: [
+                Some((1, 40.0)),
+                Some((2, 50.0)),
+                Some((3, 60.0)),
+                None,
+                None,
+                None,
+            ],
+            max_state: MAX_STATE,
             path: "cooling_device".into(),
             state: "cooling_device/cur_state".into(),
             last_state: None,
