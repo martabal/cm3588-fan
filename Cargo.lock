@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "cm3588-fan"
-version = "0.2.8"
+version = "0.2.12"
 dependencies = [
  "env_logger",
  "log",
