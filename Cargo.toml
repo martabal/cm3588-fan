@@ -24,6 +24,7 @@ strip = "symbols"
 [lints.clippy]
 missing_panics_doc = "allow"
 missing_errors_doc = "allow"
+cast_precision_loss = "allow"
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
 style = { level = "deny", priority = -1 }
