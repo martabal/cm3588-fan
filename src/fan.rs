@@ -54,9 +54,12 @@ impl Fan {
         );
 
         let mut results = [None; MAX_LEVEL];
-        let limit = num_slots.min(MAX_LEVEL);
 
-        for (i, result) in results.iter_mut().enumerate().take(limit) {
+        for (i, result) in results
+            .iter_mut()
+            .enumerate()
+            .take(num_slots.min(MAX_LEVEL))
+        {
             let state = config
                 .state
                 .min
@@ -146,6 +149,14 @@ mod tests {
 
     use super::*;
 
+    fn rest_is_none(slots: [Option<(u8, f32)>; MAX_LEVEL], index: usize) {
+        assert!(
+            slots
+                .get(index..)
+                .map_or(true, |rest| rest.iter().all(|x| x.is_none()))
+        );
+    }
+
     #[test]
     fn test_check_config() {
         let max_state = Some(4);
@@ -214,7 +225,7 @@ mod tests {
 
         let slots = Fan::calculate_slots(&fan, DEFAULT_MAX_STATE);
 
-        assert_eq!(slots[1], None);
+        rest_is_none(slots, 1);
         assert_eq!(slots[0].unwrap(), (DEFAULT_MAX_STATE, min_threshold));
     }
 
@@ -237,7 +248,7 @@ mod tests {
 
         let slots = Fan::calculate_slots(&fan, DEFAULT_MAX_STATE);
 
-        assert_eq!(slots[0], None);
+        rest_is_none(slots, 0);
     }
 
     #[test]
@@ -426,7 +437,7 @@ mod tests {
 
         let slots = Fan::calculate_slots(&config, 5);
 
-        assert_eq!(slots[2], None);
+        rest_is_none(slots, 2);
         assert_eq!(slots[0].unwrap(), (1, 40.0));
         assert_eq!(slots[1].unwrap(), (2, 60.0));
     }
@@ -447,7 +458,7 @@ mod tests {
 
         let slots = Fan::calculate_slots(&config, 5);
 
-        assert_eq!(slots[3], None);
+        rest_is_none(slots, 3);
         assert_eq!(slots[0].unwrap().0, 3);
         assert_eq!(slots[1].unwrap().0, 4);
         assert_eq!(slots[2].unwrap().0, 5);
