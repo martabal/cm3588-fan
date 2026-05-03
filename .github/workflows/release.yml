@@ -36,10 +36,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          RUST_VERSION=$(grep -oP '^FROM rust:\K[^@]+' Dockerfile)
+          RUST_VERSION=$(grep -oP '^FROM rust:\K[\d.]+' Dockerfile)
 
-          RELEASE_NOTES=$(gh release view ${TAG_NAME} --json body --jq '.body')
+          RELEASE_NOTES=$(gh release view "${TAG_NAME}" --json body --jq '.body')
 
           echo -e "${RELEASE_NOTES}\n\n*Binary in the release is compiled with Rust ${RUST_VERSION}*" > release-notes.md
 
-          gh release edit ${TAG_NAME} --notes-file release-notes.md
+          gh release edit "${TAG_NAME}" --notes-file release-notes.md

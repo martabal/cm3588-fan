@@ -12,7 +12,6 @@ pub struct Checker {
     pub config: Config,
     fan_device: Option<Fan>,
     temp_device: Option<Temp>,
-    buf: String,
 }
 
 impl Default for Checker {
@@ -40,7 +39,6 @@ impl Checker {
             config,
             fan_device,
             temp_device,
-            buf: String::new(),
         }
     }
 
@@ -66,7 +64,7 @@ impl Checker {
         }
 
         let temp = self.temp_device.as_ref().unwrap();
-        let current_temp = match temp.get_current_temp(&mut self.buf) {
+        let current_temp = match temp.get_current_temp() {
             Ok(temp) => temp,
             Err(err) => {
                 error!("Can't read temperature: {err}");
@@ -85,30 +83,65 @@ impl Checker {
             return;
         }
 
-        self.buf.clear();
-        let current_speed: u8 =
-            match File::open(&fan.state).and_then(|mut f| f.read_to_string(&mut self.buf)) {
-                Ok(_) => match self.buf.trim().parse::<u8>() {
-                    Ok(speed) => speed,
+        let current_speed: u8 = match File::open(&fan.state) {
+            Ok(mut f) => {
+                let mut buf = [0u8; 16];
+                let n = match f.read(&mut buf) {
+                    Ok(n) => n,
                     Err(e) => {
-                        error!("Can't parse speed value: {e}");
+                        error!("Device is not available: {e}");
+                        self.fan_device = None;
                         return;
                     }
-                },
-                Err(e) => {
-                    error!("Device is not available: {e}");
-                    self.fan_device = None;
-                    return;
+                };
+
+                let bytes = &buf[..n];
+
+                let mut value: u8 = 0;
+                let mut started = false;
+
+                for &b in bytes {
+                    if b.is_ascii_whitespace() {
+                        if started {
+                            break;
+                        }
+                        continue;
+                    }
+
+                    if b.is_ascii_digit() {
+                        started = true;
+                        value = if let Some(v) =
+                            value.checked_mul(10).and_then(|v| v.checked_add(b - b'0'))
+                        {
+                            v
+                        } else {
+                            error!("Can't parse speed value: overflow");
+                            return;
+                        };
+                    } else {
+                        error!("Can't parse speed value: invalid character");
+                        return;
+                    }
                 }
-            };
+
+                value
+            }
+
+            Err(e) => {
+                error!("Device is not available: {e}");
+                self.fan_device = None;
+                return;
+            }
+        };
 
         if current_speed != desired_speed || !self.is_init {
             if !self.is_init {
                 debug!("Setting the speed for the first time!");
                 self.is_init = true;
             }
+            let buf: [u8; 1] = [desired_speed];
             info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
-            if fs::write(&fan.state, desired_speed.to_string()).is_ok() {
+            if fs::write(&fan.state, buf).is_ok() {
                 fan.last_state = Some(desired_speed);
             } else {
                 error!("Can't set speed on device {}", fan.state.display());
@@ -192,7 +225,6 @@ mod tests {
             config: create_test_config(),
             fan_device: None,
             temp_device: None,
-            buf: String::new(),
         };
         assert!(!checker.is_init);
         assert!(checker.fan_device.is_none());
@@ -206,7 +238,6 @@ mod tests {
             config: create_test_config(),
             fan_device: None,
             temp_device: None,
-            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -223,7 +254,6 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
-            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -241,7 +271,6 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
-            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -258,7 +287,6 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
-            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -276,7 +304,6 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: Some(temp),
-            buf: String::new(),
         };
 
         checker.adjust_speed();
@@ -292,7 +319,6 @@ mod tests {
             config: create_test_config(),
             fan_device: Some(fan),
             temp_device: None,
-            buf: String::new(),
         };
 
         checker.adjust_speed();
