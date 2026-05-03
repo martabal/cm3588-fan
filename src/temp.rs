@@ -5,6 +5,7 @@ use std::{
     io::{self, Read},
     num::ParseFloatError,
     path::PathBuf,
+    str::Utf8Error,
 };
 
 use crate::{THERMAL_DIR, config::DEFAULT_MAX_STATE};
@@ -17,6 +18,7 @@ pub struct Temp {
 pub enum Error {
     Io(io::Error),
     Parse(ParseFloatError),
+    Utf8Error(Utf8Error),
 }
 
 impl From<io::Error> for Error {
@@ -31,11 +33,18 @@ impl From<ParseFloatError> for Error {
     }
 }
 
+impl From<Utf8Error> for Error {
+    fn from(err: Utf8Error) -> Self {
+        Self::Utf8Error(err)
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(e) => write!(f, "IO error: {e}"),
             Self::Parse(e) => write!(f, "Parse error: {e}"),
+            Self::Utf8Error(e) => write!(f, "Parse error: {e}"),
         }
     }
 }
@@ -50,10 +59,13 @@ impl Temp {
         Ok(Self { path })
     }
 
-    pub fn get_current_temp(&self, buf: &mut String) -> Result<f32, Error> {
-        buf.clear();
-        File::open(&self.path)?.read_to_string(buf)?;
-        Ok(buf.trim().parse::<f32>()? / 1000.0)
+    pub fn get_current_temp(&self) -> Result<f32, Error> {
+        let mut buf = [0u8; 8];
+        let n = File::open(&self.path)?.read(&mut buf)?;
+        let s = std::str::from_utf8(&buf[..n])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+            .trim();
+        Ok(s.parse::<f32>()? / 1000.0)
     }
 
     pub fn get_temp_path() -> io::Result<PathBuf> {
@@ -61,19 +73,29 @@ impl Temp {
             let entry = entry?;
             let path = entry.path();
 
-            if path
+            if !path
                 .file_name()
                 .and_then(|s| s.to_str())
                 .is_some_and(|s| s.starts_with(THERMAL_ZONE_NAME))
             {
-                let temp_path = path.join("temp");
+                continue;
+            }
 
-                if let Ok(content) = fs::read_to_string(&temp_path)
-                    && content.trim().parse::<f64>().is_ok()
-                {
-                    info!("Temp path: {}", temp_path.display());
-                    return Ok(temp_path);
-                }
+            let temp_path = path.join("temp");
+
+            let Ok(mut file) = fs::File::open(&temp_path) else {
+                continue;
+            };
+
+            let mut buf = [0u8; 8]; // temp is in millidegrees, e.g. "101000\n" — 7 bytes max
+            let n = file.read(&mut buf)?;
+            let content = std::str::from_utf8(&buf[..n])
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                .trim();
+
+            if content.parse::<f64>().is_ok() {
+                info!("Temp path: {}", temp_path.display());
+                return Ok(temp_path);
             }
         }
 
@@ -117,8 +139,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 45.0);
     }
@@ -130,8 +151,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 50.0);
     }
@@ -143,8 +163,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0.0);
     }
@@ -156,8 +175,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 100.0);
     }
@@ -169,8 +187,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_err());
     }
 
@@ -180,8 +197,7 @@ mod tests {
             path: PathBuf::from("/nonexistent/path/temp"),
         };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_err());
     }
 
@@ -192,8 +208,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_err());
     }
 
@@ -204,8 +219,7 @@ mod tests {
 
         let temp = Temp { path: temp_file };
 
-        let mut buf = String::new();
-        let result = temp.get_current_temp(&mut buf);
+        let result = temp.get_current_temp();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), -5.0);
     }
