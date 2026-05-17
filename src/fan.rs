@@ -1,8 +1,9 @@
 use crate::{THERMAL_DIR, config::Config, temp::MAX_LEVEL};
 use log::{error, info, trace};
 use std::{
-    error::Error,
-    fs,
+    fmt, fs,
+    io::{self, Read},
+    num::ParseIntError,
     path::{Path, PathBuf},
 };
 
@@ -18,10 +19,47 @@ pub struct Fan {
     pub last_state: Option<u8>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    Parse(ParseIntError),
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(err: ParseIntError) -> Self {
+        Self::Parse(err)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::Parse(e) => write!(f, "Parse error: {e}"),
+        }
+    }
+}
+
 impl Fan {
-    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u8, Box<dyn Error>> {
-        let content = fs::read_to_string(device.as_ref().join("max_state"))?;
-        Ok(content.trim().parse::<u8>()?)
+    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u8, Error> {
+        let path = device.as_ref().to_path_buf().join("max_state");
+
+        let mut file = fs::File::open(&path)?;
+        let mut buf = [0u8; 3]; // u8 max is "255" — 3 bytes
+        let n = file.read(&mut buf)?;
+
+        let s = std::str::from_utf8(&buf[..n])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+            .trim();
+
+        s.parse::<u8>()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e).into())
     }
 
     #[must_use]
@@ -81,17 +119,24 @@ impl Fan {
     pub fn get_fan_device() -> Option<(PathBuf, PathBuf)> {
         fs::read_dir(THERMAL_DIR).ok()?.flatten().find_map(|entry| {
             let entry_path = entry.path();
-            if entry_path
+            if !entry_path
                 .file_name()?
                 .to_str()?
                 .starts_with(DEVICE_NAME_COOLING)
             {
-                let content = fs::read_to_string(entry_path.join("type")).ok()?;
-                if content.trim() == DEVICE_TYPE_PWM_FAN {
-                    return Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path));
-                }
+                return None;
             }
-            None
+
+            let mut file = fs::File::open(entry_path.join("type")).ok()?;
+            let mut buf = [0u8; 32]; // enough for any thermal device type name
+            let n = file.read(&mut buf).ok()?;
+            let content = std::str::from_utf8(&buf[..n]).ok()?.trim();
+
+            if content == DEVICE_TYPE_PWM_FAN {
+                Some((entry_path.join(FILE_NAME_CUR_STATE), entry_path))
+            } else {
+                None
+            }
         })
     }
 
