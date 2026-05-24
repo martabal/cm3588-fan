@@ -40,8 +40,8 @@ impl Default for Config {
 }
 
 impl Config {
-    fn get_level_color<T: Into<Option<Level>>>(level: T) -> &'static str {
-        match level.into() {
+    const fn get_level_color(level: Option<Level>) -> &'static str {
+        match level {
             Some(Level::Error) => RED,
             Some(Level::Warn) => YELLOW,
             Some(Level::Info) => GREEN,
@@ -67,7 +67,7 @@ impl Config {
 
         if !debug_mode {
             builder.format(|f, r| {
-                let color = Self::get_level_color(r.level());
+                let color = Self::get_level_color(Some(r.level()));
                 writeln!(f, "{}{}{}", color, r.args(), RESET)
             });
         }
