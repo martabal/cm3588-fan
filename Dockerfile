@@ -1,4 +1,4 @@
-FROM rust:1.95.0-slim-trixie@sha256:81099830a1e1d244607b9a7a30f3ff6ecadc52134a933b4635faba24f52840c9
+FROM rust:1.95.0-slim-trixie@sha256:e14e87345b4d5964ddcc3491d27ee046a0f23820f340c3c1e24da6880141f7c0
 
 WORKDIR /app
 
