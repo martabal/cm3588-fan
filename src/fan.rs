@@ -47,8 +47,8 @@ impl fmt::Display for Error {
 }
 
 impl Fan {
-    fn get_device_max_state(device: impl AsRef<Path>) -> Result<u8, Error> {
-        let path = device.as_ref().to_path_buf().join("max_state");
+    fn get_device_max_state(device: &Path) -> Result<u8, Error> {
+        let path = device.join("max_state");
 
         let mut file = fs::File::open(&path)?;
         let mut buf = [0u8; 3]; // u8 max is "255" — 3 bytes
