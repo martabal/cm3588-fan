@@ -16,8 +16,7 @@ COPY Cargo* .
 COPY src src
 
 RUN \
-  cargo \
-  build \
+  cargo build \
   --locked \
   --release \
   --target=aarch64-unknown-linux-gnu

@@ -1,0 +1,8 @@
+[tools]
+hadolint = "2.14.0"
+typos = "latest"
+
+[settings]
+experimental = true
+pin = true
+lockfile = true
