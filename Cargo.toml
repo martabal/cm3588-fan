@@ -2,32 +2,34 @@
 name = "cm3588-fan"
 version = "0.2.12"
 edition = "2024"
-license = "MIT"
 description = "Control your cm355 fan"
 homepage = "https://github.com/martabal/cm3588-fan"
 repository = "https://github.com/martabal/cm3588-fan"
+license = "MIT"
 
 [dependencies]
-env_logger = { version = "0.11.10", default-features = false, features = [
-  "humantime",
-] }
-log = { version = "0.4.29", default-features = false }
+env_logger = {
+  version = "0.11.11",
+  default-features = false,
+  features = ["humantime"]
+}
+log = { version = "0.4.33", default-features = false }
+
+[lints.clippy]
+cast_precision_loss = "allow"
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
-panic = 'abort'
 strip = "symbols"
-
-[lints.clippy]
-missing_panics_doc = "allow"
-missing_errors_doc = "allow"
-cast_precision_loss = "allow"
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-style = { level = "deny", priority = -1 }
-complexity = { level = "deny", priority = -1 }
-perf = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-nursery = { level = "deny", priority = -1 }
+lto = true
+panic = "abort"
+codegen-units = 1

@@ -1,6 +1,6 @@
 [tools]
 hadolint = "2.14.0"
-typos = "latest"
+typos = "1.48.0"
 
 [settings]
 experimental = true
