@@ -6,3 +6,6 @@ build:
 
 release:
 	git-cliff -l | wl-copy
+
+kernel-module:
+	$(MAKE) -C kernel-module

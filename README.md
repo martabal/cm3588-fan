@@ -5,7 +5,7 @@ This runs as a background service. You can configure the fan speed based on the 
 
 It requires Rust 1.85.1 or later. The binary included in the release artifacts is compiled using the latest stable Rust version available at the time of release.
 
-## Install
+## Userspace install
 
 Download the binary from the [latest release](https://github.com/martabal/cm3588-fan/releases/latest/download/cm3588-fan) and install it in `/usr/local/bin/cm3588-fan`. Download the systemd service from the [latest release](https://github.com/martabal/cm3588-fan/releases/latest/download/cm3588-fan.service) and install it in `/etc/systemd/system/cm3588-fan.service`. Then enable and start the service with :
 
@@ -26,3 +26,9 @@ systemctl start cm3588-fan.service
 | `MAX_THRESHOLD` | Temperature threshold for triggering the maximum state. (>0 and <=5 and > MIN_THRESHOLD)                          | `65`          |
 
 With the default parameters, the fan remains off until the CPU temperature reaches the minimum threshold of 45°C. Once this threshold is crossed, the fan speed is set to 2 at 50°C, 3 at 55°C, 4 at 60°C, and 5 when the temperature exceeds 65°C.
+
+## Kernel module
+
+This repository now also includes a kernel module implementation in `/home/runner/work/cm3588-fan/cm3588-fan/kernel-module`.
+
+Build and usage instructions are available in `/home/runner/work/cm3588-fan/cm3588-fan/kernel-module/README.md`.
