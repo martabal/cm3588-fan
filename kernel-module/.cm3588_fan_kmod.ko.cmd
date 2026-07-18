@@ -1,0 +1,1 @@
+savedcmd_cm3588_fan_kmod.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/src/linux-headers-6.17.0-1018-azure/scripts/module.lds -o cm3588_fan_kmod.ko cm3588_fan_kmod.o cm3588_fan_kmod.mod.o .module-common.o
