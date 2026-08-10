@@ -1,0 +1,87 @@
+x-steps:
+  mise: &step-mise
+    glob: ["mise.toml"]
+    _type: step
+    check: mise fmt --check
+    fix: mise fmt
+    depends: []
+    env: {}
+
+  typos: &step-typos
+    glob: ["mise.lock"]
+    _type: step
+    check: typos .
+    fix: typos --force-exclude --write-changes
+    depends: []
+    env: {}
+
+  rumdl: &step-rumdl
+    glob: ["**/*.md"]
+    _type: step
+    check: rumdl check
+    fix: rumdl check --fix
+    depends: []
+    env: {}
+
+  cargo-fmt: &step-cargo-fmt
+    glob: ["**/*.rs"]
+    _type: step
+    check: cargo fmt --check
+    fix: cargo fmt
+    output_summary: hide
+    depends: []
+    env: {}
+
+  cargo-clippy: &step-cargo-clippy
+    glob: ["**/*.rs"]
+    _type: step
+    check: cargo clippy --all-features --all-targets
+    fix: cargo clippy --all-features --all-targets --allow-dirty
+    output_summary: hide
+    depends: []
+    env: {}
+
+  cargo-test: &step-cargo-test
+    glob: ["**/*.rs"]
+    _type: step
+    check: cargo test
+    output_summary: hide
+    depends: []
+    env: {}
+
+  actionlint: &step-actionlint
+    glob: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    _type: step
+    check: actionlint
+    output_summary: hide
+    depends: []
+    env: {}
+
+hooks:
+  pre-commit:
+    fix: true
+    steps:
+      mise: *step-mise
+      typos: *step-typos
+      rumdl: *step-rumdl
+      cargo-fmt: *step-cargo-fmt
+      cargo-clippy: *step-cargo-clippy
+      cargo-test: *step-cargo-test
+      actionlint: *step-actionlint
+  fix:
+    steps:
+      mise: *step-mise
+      typos: *step-typos
+      rumdl: *step-rumdl
+      cargo-fmt: *step-cargo-fmt
+      cargo-clippy: *step-cargo-clippy
+      actionlint: *step-actionlint
+  check:
+    steps:
+      mise: *step-mise
+      typos: *step-typos
+      rumdl: *step-rumdl
+      cargo-fmt: *step-cargo-fmt
+      cargo-clippy: *step-cargo-clippy
+      cargo-test: *step-cargo-test
+      actionlint: *step-actionlint

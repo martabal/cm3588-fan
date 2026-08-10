@@ -5,6 +5,7 @@ use std::{
     io::{self, Read},
     num::ParseIntError,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 const FILE_NAME_CUR_STATE: &str = "cur_state";
@@ -16,7 +17,22 @@ pub struct Fan {
     pub state: PathBuf,
     pub max_state: u8,
     pub temp_slots: [Option<(u8, f32)>; MAX_LEVEL],
-    pub last_state: Option<u8>,
+    pub last_state: Option<FanLastState>,
+}
+
+pub struct FanLastState {
+    pub state: u8,
+    pub time_set: Instant,
+}
+
+impl FanLastState {
+    #[must_use]
+    pub fn new(state: u8) -> Self {
+        Self {
+            state,
+            time_set: Instant::now(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -190,7 +206,9 @@ impl Fan {
 #[cfg(test)]
 mod tests {
 
-    use crate::config::{DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME, State, Threshold};
+    use crate::config::{
+        DEFAULT_DELAY_BEFORE_CHANGE, DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME, State, Threshold,
+    };
 
     use super::*;
 
@@ -198,7 +216,7 @@ mod tests {
         assert!(
             slots
                 .get(index..)
-                .map_or(true, |rest| rest.iter().all(|x| x.is_none()))
+                .is_none_or(|rest| rest.iter().all(std::option::Option::is_none))
         );
     }
 
@@ -213,12 +231,13 @@ mod tests {
         let max_state = Some(2);
         let min_state = 3;
 
-        let mut panic_occurred = false;
-        if let Some(max) = max_state
+        let panic_occurred = if let Some(max) = max_state
             && min_state >= max
         {
-            panic_occurred = true;
-        }
+            true
+        } else {
+            false
+        };
 
         assert!(panic_occurred);
     }
@@ -229,6 +248,7 @@ mod tests {
         let max_threshold = 80.0;
         let fan = Config {
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
@@ -258,6 +278,7 @@ mod tests {
         let max_threshold = 80.0;
         let fan = Config {
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
@@ -281,6 +302,7 @@ mod tests {
         let max_threshold = 80.0;
         let fan = Config {
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
             threshold: Threshold {
                 max: max_threshold,
                 min: min_threshold,
@@ -300,6 +322,7 @@ mod tests {
     fn test_adjust_speed() {
         let config = Config {
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
             threshold: Threshold {
                 max: 80.0,
                 min: 40.0,
@@ -337,6 +360,7 @@ mod tests {
                 max: Some(DEFAULT_MAX_STATE),
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         }
     }
 
@@ -416,6 +440,7 @@ mod tests {
                 max: Some(2),
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         let fan = Fan {
@@ -478,6 +503,7 @@ mod tests {
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         let slots = Fan::calculate_slots(&config, 5);
@@ -499,6 +525,7 @@ mod tests {
                 min: 2,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         let slots = Fan::calculate_slots(&config, 5);
@@ -518,6 +545,7 @@ mod tests {
             },
             state: State { min: 0, max: None },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         let fan = Fan {
@@ -569,6 +597,7 @@ mod tests {
                 max: Some(3),
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         let fan = Fan {

@@ -103,6 +103,7 @@ impl Temp {
     }
 }
 
+#[allow(clippy::float_cmp)]
 #[cfg(test)]
 mod tests {
     use super::*;

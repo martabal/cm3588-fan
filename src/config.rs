@@ -8,12 +8,14 @@ const DEFAULT_UPPER_TEMP_THRESHOLD: f32 = 65.0;
 const DEFAULT_MIN_STATE: u8 = 0;
 pub const DEFAULT_MAX_STATE: u8 = 5;
 
+pub const DEFAULT_DELAY_BEFORE_CHANGE: u64 = 20;
 pub const DEFAULT_SLEEP_TIME: u64 = 5;
 
 pub struct Config {
     pub threshold: Threshold,
     pub state: State,
     pub sleep_time: u64,
+    pub time_before_change: u64,
 }
 const RED: &str = "\x1b[31m";
 const YELLOW: &str = "\x1b[33m";
@@ -105,6 +107,7 @@ impl Config {
         let max_threshold = Self::get_env("MAX_THRESHOLD", DEFAULT_UPPER_TEMP_THRESHOLD);
         let min_threshold = Self::get_env("MIN_THRESHOLD", DEFAULT_LOWER_TEMP_THRESHOLD);
         let min_state = Self::get_env("MIN_STATE", DEFAULT_MIN_STATE);
+        let time_before_change = Self::get_env("DELAY_BEFORE_CHANGE", DEFAULT_DELAY_BEFORE_CHANGE);
 
         let max_state = env::var("MAX_STATE")
             .ok()
@@ -119,6 +122,7 @@ impl Config {
                 max: max_state,
                 min: min_state,
             },
+            time_before_change,
         }
     }
 
@@ -155,7 +159,9 @@ impl Config {
 mod tests {
     use std::panic;
 
-    use crate::config::{Config, DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME};
+    use crate::config::{
+        Config, DEFAULT_DELAY_BEFORE_CHANGE, DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME,
+    };
 
     use super::{State, Threshold};
 
@@ -169,7 +175,7 @@ mod tests {
         let err_msg = err
             .downcast_ref::<String>()
             .map(std::string::String::as_str)
-            .or_else(|| err.downcast_ref::<&str>().map(|s| *s))
+            .or_else(|| err.downcast_ref::<&str>().copied())
             .unwrap_or("<non-string panic>");
         assert!(
             err_msg.contains(msg_contains),
@@ -192,6 +198,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
         config.check_config(5);
     }
@@ -210,6 +217,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
         let msg_contains =
             format!("Configured min state {min_state} exceeds device max state {max_state}");
@@ -231,6 +239,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         assert_panics(|| config.check_config(5), "min state can't be >=");
@@ -251,6 +260,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         assert_panics(|| config.check_config(5), "exceeds device max state");
@@ -271,6 +281,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         assert_panics(|| config.check_config(5), "min threshold can't be >=");
@@ -291,6 +302,7 @@ mod tests {
                 min: min_state,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -308,6 +320,7 @@ mod tests {
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         assert_panics(|| config.check_config(5), "min threshold can't be >=");
@@ -322,6 +335,7 @@ mod tests {
             },
             state: State { max: None, min: 5 },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -339,6 +353,7 @@ mod tests {
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -356,6 +371,7 @@ mod tests {
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -373,6 +389,7 @@ mod tests {
                 min: 0,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -390,6 +407,7 @@ mod tests {
                 min: 1,
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         config.check_config(5);
@@ -404,6 +422,7 @@ mod tests {
             },
             state: State { max: None, min: 1 },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         };
 
         assert_panics(
