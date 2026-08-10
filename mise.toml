@@ -1,6 +1,6 @@
 [tools]
-hadolint = "2.14.0"
-typos = "1.48.0"
+hadolint = "2.15.1"
+typos = "1.49.0"
 
 [settings]
 experimental = true
