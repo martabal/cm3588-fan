@@ -1,11 +1,16 @@
 use std::{
     fs::{self, File},
     io::Read,
+    time::Duration,
 };
 
 use log::{debug, error, info, trace};
 
-use crate::{config::Config, fan::Fan, temp::Temp};
+use crate::{
+    config::Config,
+    fan::{Fan, FanLastState},
+    temp::Temp,
+};
 
 pub struct Checker {
     is_init: bool,
@@ -42,6 +47,7 @@ impl Checker {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn adjust_speed(&mut self) {
         if self.fan_device.is_none() {
             if let Some((fan_path, path)) = Fan::get_fan_device() {
@@ -78,9 +84,19 @@ impl Checker {
         let desired_speed = fan.choose_speed(current_temp, &self.config);
         debug!("Desired speed {desired_speed}");
 
-        if fan.last_state == Some(desired_speed) {
-            debug!("State unchanged");
-            return;
+        if let Some(fan_state) = &fan.last_state {
+            if fan_state.state == desired_speed {
+                debug!("State unchanged");
+                return;
+            }
+            if self.config.time_before_change != 0
+                && fan_state.time_set.elapsed()
+                    > Duration::from_secs(self.config.time_before_change)
+                && desired_speed == 0
+            {
+                debug!("Fan stop is too early, still waiting");
+                return;
+            }
         }
 
         let current_speed: u8 = match File::open(&fan.state) {
@@ -142,7 +158,7 @@ impl Checker {
             let buf: [u8; 1] = [desired_speed];
             info!("Adjusting fan speed to {desired_speed} (Temp: {current_temp:.2}°C)");
             if fs::write(&fan.state, buf).is_ok() {
-                fan.last_state = Some(desired_speed);
+                fan.last_state = Some(FanLastState::new(desired_speed));
             } else {
                 error!("Can't set speed on device {}", fan.state.display());
                 self.fan_device = None;
@@ -156,7 +172,9 @@ impl Checker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME, State, Threshold};
+    use crate::config::{
+        DEFAULT_DELAY_BEFORE_CHANGE, DEFAULT_MAX_STATE, DEFAULT_SLEEP_TIME, State, Threshold,
+    };
     use std::path::PathBuf;
 
     fn create_test_config() -> Config {
@@ -170,6 +188,7 @@ mod tests {
                 max: Some(DEFAULT_MAX_STATE),
             },
             sleep_time: DEFAULT_SLEEP_TIME,
+            time_before_change: DEFAULT_DELAY_BEFORE_CHANGE,
         }
     }
 
@@ -187,6 +206,7 @@ mod tests {
         fn create_fan(&self, state_content: &str, last_state: Option<u8>) -> Fan {
             let state_file = self.path.join("cur_state");
             fs::write(&state_file, state_content).unwrap();
+            let fan_state = last_state.map(FanLastState::new);
 
             Fan {
                 path: self.path.clone(),
@@ -200,7 +220,7 @@ mod tests {
                     Some((5, 65.0)),
                     (None),
                 ],
-                last_state,
+                last_state: fan_state,
             }
         }
 

@@ -1,5 +1,8 @@
 [tools]
+actionlint = "1.7.12"
 hadolint = "2.15.1"
+hk = "1.54.1"
+rumdl = "0.2.53"
 typos = "1.49.0"
 
 [settings]
